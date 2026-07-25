@@ -77,7 +77,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: retire-bootstrap-helmchart
-          image: bitnami/kubectl:1.31.4
+          image: rancher/kubectl:v1.35.5
           command:
             - kubectl
             - delete
