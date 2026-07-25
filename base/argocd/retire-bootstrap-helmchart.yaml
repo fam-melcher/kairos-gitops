@@ -85,3 +85,4 @@ spec:
             - argocd
             - --namespace=kube-system
             - --ignore-not-found=true
+            - --wait=false
