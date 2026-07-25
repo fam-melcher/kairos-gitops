@@ -1,0 +1,87 @@
+# PostSync hook: retires kairos-configs' bootstrap installer once
+# argocd-release (this Application) is confirmed the live owner of the
+# ArgoCD Helm release.
+#
+# kairos-configs (the provisioning repo) installs ArgoCD via a plain
+# k3s HelmChart CR (helm.cattle.io/v1, name "argocd", namespace
+# kube-system) so a fresh cluster gets ArgoCD alive with no manual step.
+# That CR is not one-shot: it stays in the cluster indefinitely, and its
+# own controller (k3s's helm-controller) keeps an independent, standing
+# claim on the exact same Helm release ("argocd", namespace argocd) that
+# this Application also manages — two live reconcilers of one
+# installation. Confirmed in practice: the Deployment this renders (e.g.
+# argocd-server) carries both meta.helm.sh/release-name (the k3s
+# HelmChart's claim) and argocd.argoproj.io/tracking-id (this
+# Application's claim) simultaneously.
+#
+# Deleting the HelmChart CR the moment this Application first syncs
+# successfully hands ownership to this Application alone, with no window
+# where nobody owns the release (the CR's job already ran once at install
+# time; this cluster's ArgoCD is already up before this hook ever runs).
+# hook-delete-policy: HookSucceeded removes every object on this page
+# once the Job completes, so nothing but the effect (HelmChart CR gone)
+# lingers.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-retire-bootstrap
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-retire-bootstrap
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - apiGroups: ["helm.cattle.io"]
+    resources: ["helmcharts"]
+    resourceNames: ["argocd"]
+    verbs: ["get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-retire-bootstrap
+  namespace: kube-system
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-retire-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: argocd-retire-bootstrap
+    namespace: argocd
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: argocd-retire-bootstrap
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: argocd-retire-bootstrap
+      restartPolicy: Never
+      containers:
+        - name: retire-bootstrap-helmchart
+          image: bitnami/kubectl:1.31.4
+          command:
+            - kubectl
+            - delete
+            - helmchart
+            - argocd
+            - --namespace=kube-system
+            - --ignore-not-found=true
