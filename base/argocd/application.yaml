@@ -32,3 +32,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # Required when Argo CD manages itself (verified against
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/,
+      # not assumed) — some of its own CRDs exceed client-side apply's
+      # 262KB last-applied-configuration annotation limit.
+      - ServerSideApply=true
