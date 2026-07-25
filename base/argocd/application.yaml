@@ -16,13 +16,24 @@ metadata:
 spec:
   project: default
   source:
-    chart: argo-cd
-    repoURL: https://argoproj.github.io/argo-helm
+    # Argo CD's own official manifests, not the separate argo-helm
+    # community chart — matches ArgoCD's documented self-management
+    # example exactly (manifests/cluster-install, a Kustomize directory:
+    # namespace-install + cluster-rbac + crds). Bootstrap
+    # (kairos-configs/configs/roles/16-argocd.yaml) applies this same
+    # project's manifests/install.yaml. Two different packaging projects
+    # for the same app (community Helm chart vs. upstream manifests) can
+    # wire up shared components differently — confirmed in practice: the
+    # argo-helm chart's redis Deployment ran its secret-init container
+    # under the "default" ServiceAccount with no secret-create RBAC,
+    # while manifests/base/redis ships its own dedicated
+    # ServiceAccount+Role+RoleBinding for exactly that. Using the same
+    # source for both bootstrap and self-management removes the seam.
+    repoURL: https://github.com/argoproj/argo-cd
+    path: manifests/cluster-install
     # targetRevision intentionally absent — supplied per cluster by
     # clusters/<name>/apps/argocd/version-patch.yaml. This file alone is
     # not a valid, deployable Application.
-    helm:
-      releaseName: argocd
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

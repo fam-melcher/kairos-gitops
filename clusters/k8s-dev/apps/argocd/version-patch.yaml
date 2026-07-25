@@ -5,4 +5,7 @@ metadata:
   namespace: argocd
 spec:
   source:
-    targetRevision: "10.2.0"
+    # Pinned to the same tag kairos-configs's one-shot bootstrap applies
+    # (configs/roles/16-argocd.yaml) — no version drift the instant
+    # self-management takes over.
+    targetRevision: "v3.4.5"
