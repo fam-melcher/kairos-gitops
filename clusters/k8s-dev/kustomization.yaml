@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Presence of this file flips root's sync of clusters/k8s-dev from a
+# plain, non-recursive directory to a real Kustomize build (ADR 0005) —
+# root now owns each app's rendered Application directly, matching
+# ArgoCD's documented App of Apps pattern (one parent, multiple real
+# children) instead of an extra pointer-per-app indirection.
+resources:
+  - apps/argocd

@@ -1,6 +1,6 @@
 # 0001 — App-of-apps, grouped by cluster
 
-- Status: Accepted
+- Status: Superseded by [0005](0005-collapse-to-two-level-app-of-apps.md) — the per-cluster grouping and base+overlay shape stand; the per-app pointer-file indirection this ADR introduced does not match ArgoCD's documented App of Apps pattern and is removed
 - Date: 2026-07-24
 
 ## Context

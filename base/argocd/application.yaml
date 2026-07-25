@@ -1,15 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  # Deliberately not "argocd": clusters/<name>/argocd.yaml (the app-of-apps
-  # pointer root discovers) already uses that name for the SAME
-  # apiVersion/kind/namespace. Sharing a name there means both objects are
-  # the same Kubernetes resource — whichever synced last stomps the
-  # other's spec, causing this Application to alternate between "my only
-  # child is the pointer's one Application object" (prunes every real
-  # ArgoCD resource) and "my child is the actual Helm release" on every
-  # reconcile. Distinct identity is required, not just tidiness.
-  name: argocd-release
+  # Named plainly "argocd" — root owns this Application directly
+  # (ADR 0005). An earlier shape had root pointing at a separate 1-to-1
+  # pointer Application that also had to be named "argocd", forcing this
+  # one into "argocd-release" to avoid a name collision. That extra
+  # indirection didn't match ArgoCD's documented App of Apps pattern
+  # (one parent, multiple direct real children) and is gone now, so is
+  # the workaround name.
+  name: argocd
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
