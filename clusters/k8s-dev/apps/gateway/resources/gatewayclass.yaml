@@ -1,0 +1,12 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  # Not "eg" — that is the name used in upstream's quickstart example, not a
+  # reserved one. The chart creates no GatewayClass at all (verified by
+  # rendering v1.8.3), so this repo owns the object and names it plainly.
+  name: envoy-gateway
+spec:
+  # Verified three ways: the chart's rendered envoy-gateway-config ConfigMap
+  # (gateway.controllerName), upstream's v1.8.3 quickstart, and a running
+  # deployment in a sibling repo.
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller

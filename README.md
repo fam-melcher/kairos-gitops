@@ -65,6 +65,8 @@ See [`docs/adr/`](docs/adr/) for the reasoning behind this shape.
 | `argocd` | ArgoCD manages itself, from its own official manifests (`manifests/cluster-install`), not the argo-helm chart (ADR 0004) | version |
 | `metallb` | MetalLB in L2 mode, from upstream's `config/native` Kustomize directory — the clusters have no other `type: LoadBalancer` implementation (ADR 0006) | version |
 | `metallb-config` | That cluster's `IPAddressPool` + `L2Advertisement` | address |
+| `envoy-gateway` | Envoy Gateway, implementing Gateway API — no `Ingress` (ADR 0009) | version |
+| `gateway` | That cluster's `GatewayClass` + `Gateway` | listener hostname |
 
 Bumping one cluster's version ahead of the other is a one-line change to
 that cluster's `clusters/<name>/apps/<app>/version-patch.yaml`.
@@ -72,7 +74,14 @@ that cluster's `clusters/<name>/apps/<app>/version-patch.yaml`.
 MetalLB addresses, each sitting directly above its cluster's kube-vip
 control-plane VIP:
 
-| Cluster | kube-vip VIP | MetalLB |
-|---|---|---|
-| `k8s-dev` | `192.168.1.11` | `192.168.1.12` |
-| `k8s-prod` | `192.168.30.2` | `192.168.30.3` |
+| Cluster | kube-vip VIP | MetalLB | Gateway listener |
+|---|---|---|---|
+| `k8s-dev` | `192.168.1.11` | `192.168.1.12` | `*.k8s-dev.home.fam-melcher.net` |
+| `k8s-prod` | `192.168.30.2` | `192.168.30.3` | `*.k8s-prod.home.fam-melcher.net` |
+
+The `k8s-dev` wildcard record does not exist yet — create it pointing at
+`192.168.1.12`. The prod one already resolves.
+
+Both Gateways use `allowedRoutes.namespaces.from: All`, which is fine
+while these addresses are LAN-only. Read ADR 0009's consequences before
+port-forwarding either of them.

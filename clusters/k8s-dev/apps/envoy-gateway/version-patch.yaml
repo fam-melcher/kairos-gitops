@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: envoy-gateway
+  namespace: argocd
+spec:
+  source:
+    # Envoy Gateway v1.8 supports Kubernetes v1.32-v1.35. These clusters
+    # build at v1.35 (kairos-configs/scripts/build-iso.sh), the top edge of
+    # that range — so this pin and kairos-configs' K8S_VERSION are a coupled
+    # pair. The next k3s minor bump there moves the clusters out of Envoy
+    # Gateway v1.8's support matrix. Same posture as the ArgoCD tag pairing
+    # in ADR 0004.
+    targetRevision: v1.8.3

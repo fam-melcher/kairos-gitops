@@ -1,0 +1,38 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: main
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: envoy-gateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      # Derived from this cluster's own dns value in kairos-configs
+      # (clusters/k8s-dev/config/11-cluster.yaml), mirroring the scheme
+      # already in use on k8s-prod.
+      #
+      # NOTE: unlike prod, this wildcard record does not exist yet. Create
+      # *.k8s-dev.home.fam-melcher.net -> 192.168.1.12 (this cluster's
+      # single MetalLB address, ADR 0006). Until then the Gateway will
+      # report Programmed but nothing will resolve to it.
+      #
+      # Wildcard is a suffix match: this accepts foo.k8s-dev.home... but NOT
+      # the apex k8s-dev.home..., which would need its own listener entry.
+      # The apex currently resolves to the control-plane VIP.
+      hostname: "*.k8s-dev.home.fam-melcher.net"
+      allowedRoutes:
+        namespaces:
+          # Governs Route->Gateway attachment only. Cross-namespace
+          # backendRefs (and, later, TLS certificateRefs) additionally
+          # require a ReferenceGrant in the target's namespace — one reason
+          # HTTPRoutes belong alongside the workloads they route to.
+          #
+          # "All" is appropriate while this address is LAN-only. It means
+          # anyone able to create an HTTPRoute in any namespace can publish
+          # on this Gateway. Before this address is ever port-forwarded,
+          # split internet-facing traffic onto a second Gateway with its own
+          # address, an exact (non-wildcard) listener hostname and a
+          # restricted allowedRoutes selector — see ADR 0009.
+          from: All
