@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb-config
+  namespace: argocd
+spec:
+  source:
+    # HEAD, matching the root Application that kairos-configs bootstraps
+    # (configs/roles/16-argocd.yaml) — not a tag, and not "main". A
+    # sub-Application pinned to a tag while its parent follows HEAD gives two
+    # different views of the same repo in one cluster.
+    targetRevision: HEAD
+    # The pool is per-cluster content, not a per-cluster value, so the whole
+    # resources/ directory is per-cluster rather than a patched shared base
+    # (ADR 0007).
+    path: clusters/k8s-prod/apps/metallb-config/resources

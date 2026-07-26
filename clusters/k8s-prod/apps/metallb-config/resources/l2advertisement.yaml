@@ -1,0 +1,17 @@
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: default
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - default
+  # interfaces is NOT set. The install ships ConfigMap metallb-excludel2 with
+  # a default exclude list (docker/cni/veth/cali/flannel/lo), which handles
+  # the multi-NIC case. Set an explicit list only if announcement is observed
+  # landing on the wrong NIC.
+  #
+  # nodeSelectors is NOT set. It would be the natural way to keep MetalLB's
+  # announcement off the node holding kube-vip's VIP — but every node on this
+  # cluster is a control-plane node running kube-vip, so there is nowhere to
+  # move it to. Address deconfliction is the whole mitigation (see the pool).
