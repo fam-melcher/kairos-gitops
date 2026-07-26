@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Points back at this repo, same as base/metallb-config — the listener
+    # set is per-cluster content, not a per-cluster value (ADR 0007).
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/gateway/version-patch.yaml.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: envoy-gateway-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Same ordering posture as metallb-config, for the same reason (ADR
+    # 0008): nothing orders this Application against envoy-gateway, because
+    # argoproj.io/Application has no health assessment in stock ArgoCD
+    # v3.4.5, so sync waves cannot gate one app on another's readiness. On a
+    # fresh provision both sync concurrently and this one converges by retry.
+    #
+    # The chart also ships a MutatingWebhookConfiguration; retry covers the
+    # case where it is not yet serving when these CRs are applied, which
+    # SkipDryRunOnMissingResource does not (that is an admission rejection,
+    # not a dry-run failure).
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      # Without this, the first sync hard-fails its dry run against Gateway
+      # API CRDs the envoy-gateway app has not registered yet. Note the cost
+      # of splitting installs from CRs: ArgoCD skips the dry run
+      # automatically when a CR's CRD is part of the same sync, and this
+      # split forfeits that.
+      - SkipDryRunOnMissingResource=true
+      # CreateNamespace=true is NOT set — base/envoy-gateway owns
+      # envoy-gateway-system. Two owners for one object is ADR 0004's
+      # failure mode.
+      # ServerSideApply=true is NOT set — two small CRs, nowhere near the
+      # annotation limit.

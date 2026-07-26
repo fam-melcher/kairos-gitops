@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: envoy-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # OCI Helm chart, and the repoURL form is deliberate: no oci:// scheme.
+    # ArgoCD v3.4.5's Helm documentation shows the registry host bare, with
+    # the note "the oci:// syntax is not included", and Envoy Gateway's own
+    # ArgoCD install page publishes exactly this Application shape.
+    # docker.io/envoyproxy is public — no repository Secret, no server-side
+    # configuration, nothing for kairos-configs to bootstrap.
+    repoURL: docker.io/envoyproxy
+    chart: gateway-helm
+    # targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/envoy-gateway/version-patch.yaml. This file alone
+    # is not a valid, deployable Application (same rule as base/argocd).
+    #
+    # No helm: block. ArgoCD defaults the release name to the Application
+    # name, and the chart's principal objects (Deployment, Service,
+    # ConfigMap) are named envoy-gateway* regardless of release name — only
+    # the certgen hook resources are release-prefixed.
+    #
+    # helm.skipCrds deliberately NOT set. The chart ships all 20 CRDs in a
+    # Helm crds/ directory — Envoy Gateway's own plus Gateway API's — and
+    # ArgoCD includes them by default. Setting skipCrds would drop every one
+    # of them, not just Gateway API's. Nothing else installs them.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: envoy-gateway-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Required, and measured rather than assumed (ADR 0003's rule): the
+      # rendered chart's envoyproxies.gateway.envoyproxy.io CRD is 1,352,991
+      # bytes, httproutes 533,244, securitypolicies 484,902 — all far over
+      # client-side apply's 262,144-byte last-applied-configuration limit.
+      # Contrast base/metallb, whose largest CRD is 11,584 bytes and which
+      # therefore does not set this.
+      - ServerSideApply=true

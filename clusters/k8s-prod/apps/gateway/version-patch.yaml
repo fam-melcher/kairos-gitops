@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+  namespace: argocd
+spec:
+  source:
+    # HEAD, matching the root Application that kairos-configs bootstraps
+    # (configs/roles/16-argocd.yaml) — not a tag, and not "main".
+    targetRevision: HEAD
+    path: clusters/k8s-prod/apps/gateway/resources
