@@ -8,3 +8,5 @@ kind: Kustomization
 # children) instead of an extra pointer-per-app indirection.
 resources:
   - apps/argocd
+  - apps/metallb
+  - apps/metallb-config

@@ -1,0 +1,28 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: default
+  namespace: metallb-system
+spec:
+  addresses:
+    # k8s-prod's single LoadBalancer address, sitting directly above the
+    # cluster's kube-vip control-plane VIP (192.168.30.2, set in
+    # kairos-configs/clusters/k8s-prod/config/11-cluster.yaml). Note this is
+    # a different segment from k8s-dev's — prod sits behind a routed path
+    # with a sub-1500 MTU (kairos-configs/clusters/k8s-prod/config/14-net-mtu.yaml),
+    # so nothing about its addressing is derivable from dev's.
+    #
+    # Both kube-vip and the MetalLB speaker answer ARP, and every node on
+    # this cluster is a control-plane node running both — so there is no
+    # node placement that separates them. Keeping the two addresses distinct
+    # is the entire deconfliction mechanism, which is why this pool is a
+    # single explicit /32 rather than a range that could later be widened
+    # over the VIP by accident.
+    #
+    # *.k8s-prod.home.fam-melcher.net already resolves here.
+    - 192.168.30.3/32
+  # Defaults to true at the CRD level; written out as documentation of intent.
+  # With exactly one address and one consumer, allocation is deterministic.
+  # A second Gateway (e.g. an internet-facing one) would need its address
+  # pinned rather than auto-assigned — see ADR 0006.
+  autoAssign: true

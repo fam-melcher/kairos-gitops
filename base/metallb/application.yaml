@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # MetalLB's own upstream Kustomize directory — the same shape as
+    # base/argocd (repoURL: github.com/argoproj/argo-cd, path:
+    # manifests/cluster-install). Verified buildable:
+    #   kustomize build github.com/metallb/metallb/config/native?ref=v0.16.1
+    # -> 9 CRDs, 1 ValidatingWebhookConfiguration, 1 Deployment, 1 DaemonSet.
+    #
+    # NOT the Helm chart, and the difference is not cosmetic. At chart 0.16.1
+    # `frrk8s.enabled` defaults to *true*, so an Application passing no values
+    # installs an frr-k8s DaemonSet, a second ValidatingWebhookConfiguration
+    # and four unused CRDs on a deployment that is explicitly L2-only and will
+    # never speak BGP. config/native is native by construction — there is no
+    # value to forget to set. The chart also ships neither the Namespace nor
+    # its PodSecurity labels; config/native ships both (see syncOptions).
+    repoURL: https://github.com/metallb/metallb
+    path: config/native
+    # targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/metallb/version-patch.yaml. This file alone is not
+    # a valid, deployable Application (same rule as base/argocd).
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # No syncOptions at all, and both omissions are deliberate:
+    #
+    # CreateNamespace=true is NOT set. config/native ships ns.yaml itself,
+    # already carrying pod-security.kubernetes.io/{enforce,audit,warn}:
+    # privileged — which the speaker needs (hostNetwork, NET_RAW) if
+    # PodSecurity is ever enforced on these clusters. Letting ArgoCD create
+    # the namespace too would put two owners on one object, ADR 0004's
+    # failure mode.
+    #
+    # ServerSideApply=true is NOT set. Measured on the built artifact: the
+    # largest CRD is bgppeers.metallb.io at 11,584 bytes — 4.4% of
+    # client-side apply's 262,144-byte last-applied-configuration limit.
+    # ADR 0003's rule is that a sync option is present because something
+    # requires it, not by analogy to another app that needed it.
+  ignoreDifferences:
+    # Pre-emptive rather than reactive, because the drift is structurally
+    # certain rather than speculative: the shipped manifest contains no
+    # caBundle at all, and MetalLB's controller holds patch/update on
+    # validatingwebhookconfigurations scoped to resourceNames:
+    # [metallb-webhook-configuration]. It *must* write one at runtime, so
+    # without this entry the app is permanently OutOfSync from first sync.
+    #
+    # Scoped by name on purpose — an unnamed entry would silently exempt
+    # every ValidatingWebhookConfiguration in the cluster, including ones
+    # installed later by unrelated apps.
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: metallb-webhook-configuration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle

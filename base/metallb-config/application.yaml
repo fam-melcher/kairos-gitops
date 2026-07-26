@@ -1,0 +1,66 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb-config
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # First place this repo references its own URL. Root already targets this
+    # repo from the outside (kairos-configs/configs/roles/16-argocd.yaml);
+    # this Application is the first one inside the repo to point back at it,
+    # because the address pool is per-cluster *content*, not a per-cluster
+    # value that could be patched into a shared base (ADR 0007).
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/metallb-config/version-patch.yaml.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # The webhook ordering edge, and why selfHeal is not enough for it.
+    #
+    # MetalLB ships ValidatingWebhookConfiguration metallb-webhook-configuration
+    # with six webhooks, ALL failurePolicy: Fail, covering ipaddresspools and
+    # l2advertisements. Applying these CRs before the controller is serving the
+    # webhook is a real admission rejection — an apply failure, not a dry-run
+    # failure — so SkipDryRunOnMissingResource below does not cover it.
+    #
+    # selfHeal does not recover a *failed* sync. ArgoCD v3.4.5's auto-sync
+    # documentation is explicit: automatic sync will not reattempt a sync if
+    # the previous attempt against the same commit-SHA and parameters had
+    # failed. spec.syncPolicy.retry is the documented mechanism for that case.
+    #
+    # 10 attempts at 10s doubling to a 3m cap is well over ten minutes —
+    # enough for image pull, controller start and caBundle injection.
+    #
+    # UNPROVEN: no upstream MetalLB or ArgoCD documentation describes
+    # convergence for this specific race. Verify on k8s-dev before k8s-prod.
+    # Fallbacks, in order, if it does not converge: one manual
+    # `argocd app sync metallb-config` (the webhooks only fire on CREATE and
+    # UPDATE of MetalLB CRs, so the exposure is a single first sync); merge
+    # this Application into base/metallb; last resort, switch to the Helm
+    # chart for crds.validationFailurePolicy: Ignore, accepting permanent
+    # loss of MetalLB's own CR validation. See ADR 0008.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      # The CRD ordering edge. On a fresh cluster this Application and
+      # base/metallb sync concurrently — nothing orders them, because
+      # argoproj.io/Application has no health assessment in stock ArgoCD
+      # v3.4.5, so sync waves cannot gate one app on another's readiness
+      # (ADR 0008). Without this, the first sync hard-fails its dry run
+      # against CRDs that are not registered yet.
+      - SkipDryRunOnMissingResource=true
+      # CreateNamespace=true is NOT set: base/metallb's config/native
+      # artifact owns metallb-system, labels and all.
+      # ServerSideApply=true is NOT set: two small CRs.

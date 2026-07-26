@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+spec:
+  source:
+    # MetalLB v0.16.1. Its declared kubeVersion is ">= 1.19.0-0" — a floor
+    # with no ceiling, so nothing upstream excludes these clusters'
+    # Kubernetes v1.35. Unlike the Envoy Gateway pin, this is not half of a
+    # coupled version pair.
+    targetRevision: "v0.16.1"
