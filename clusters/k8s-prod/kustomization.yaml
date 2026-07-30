@@ -12,3 +12,4 @@ resources:
   - apps/metallb-config
   - apps/envoy-gateway
   - apps/gateway
+  - apps/ceph-csi-rbd
