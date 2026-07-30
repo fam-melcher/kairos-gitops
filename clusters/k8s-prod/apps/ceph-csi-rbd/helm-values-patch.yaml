@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ceph-csi-rbd
+  namespace: argocd
+spec:
+  source:
+    helm:
+      values: |
+        # clusterID is the Ceph fsid, written into every PV's volumeHandle —
+        # changing it orphans existing volumes.
+        csiConfig:
+          - clusterID: dbab1dc0-8c07-11f1-82cc-0025904677a2
+            monitors:
+              - "192.168.30.147:6789"
+
+        # Must not exceed node count: the chart applies required
+        # podAntiAffinity per hostname once replicaCount > 1.
+        provisioner:
+          replicaCount: 3
+
+        storageClass:
+          create: true
+          name: standard-rwo
+          annotations:
+            storageclass.kubernetes.io/is-default-class: "true"
+          clusterID: dbab1dc0-8c07-11f1-82cc-0025904677a2
+          pool: k8s-prod-rbd
+          imageFeatures: "layering"
+          # Created out-of-band; holds the client.k8s-prod-rbd key.
+          provisionerSecret: ceph-csi-rbd-credentials
+          controllerExpandSecret: ceph-csi-rbd-credentials
+          controllerPublishSecret: ceph-csi-rbd-credentials
+          nodeStageSecret: ceph-csi-rbd-credentials
