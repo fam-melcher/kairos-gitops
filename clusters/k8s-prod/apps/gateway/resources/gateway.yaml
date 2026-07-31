@@ -3,6 +3,11 @@ kind: Gateway
 metadata:
   name: main
   namespace: envoy-gateway-system
+  annotations:
+    # cert-manager derives a Certificate from every listener that has a
+    # hostname, tls.mode Terminate and a same-namespace certificateRef —
+    # so this covers the https listener and skips http. See ADR 0011.
+    cert-manager.io/cluster-issuer: letsencrypt
 spec:
   gatewayClassName: envoy-gateway
   listeners:
@@ -31,4 +36,20 @@ spec:
           # split internet-facing traffic onto a second Gateway with its own
           # address, an exact (non-wildcard) listener hostname and a
           # restricted allowedRoutes selector — see ADR 0009.
+          from: All
+
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.k8s-prod.home.fam-melcher.net"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          # cert-manager names the Certificate after this Secret and creates
+          # both in this namespace. Neither object is in git.
+          - kind: Secret
+            group: ""
+            name: wildcard-k8s-prod-tls
+      allowedRoutes:
+        namespaces:
           from: All

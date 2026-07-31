@@ -12,3 +12,5 @@ resources:
   - apps/metallb-config
   - apps/envoy-gateway
   - apps/gateway
+  - apps/cert-manager
+  - apps/cert-manager-config

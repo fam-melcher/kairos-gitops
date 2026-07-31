@@ -1,0 +1,74 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    # targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/cert-manager/version-patch.yaml.
+    #
+    # helm.values lives here rather than in the overlay (contrast
+    # ceph-csi-rbd, ADR 0010): none of these values differ per cluster.
+    helm:
+      values: |
+        # Chart default is false; nothing else installs these CRDs.
+        crds:
+          enabled: true
+
+        # home.fam-melcher.net resolves split-horizon: the LAN resolver
+        # answers it and returns NODATA for the _acme-challenge TXT, so the
+        # DNS-01 self check must bypass the cluster's own resolver path.
+        # See ADR 0011.
+        # Three operators, two addresses each: Quad9, Cloudflare, DNS4EU.
+        # cert-manager walks this list in order and stops at the first one
+        # that answers at all, so later entries only cover an outage of the
+        # ones before them — never a stale or missing record.
+        dns01RecursiveNameservers: "9.9.9.9:53,149.112.112.112:53,1.1.1.1:53,1.0.0.1:53,86.54.11.100:53,86.54.11.200:53"
+        dns01RecursiveNameserversOnly: true
+
+        config:
+          apiVersion: controller.config.cert-manager.io/v1alpha1
+          kind: ControllerConfiguration
+          # Watches annotated Gateways. Only read at controller startup —
+          # see ADR 0011 for the fresh-provision ordering hazard.
+          gatewayAPI:
+            enabled: true
+
+        # A post-install Helm hook, which ArgoCD replays as a PostSync job on
+        # every sync. It is an install-time smoke test with no ongoing value.
+        startupapicheck:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The chart ships no Namespace of its own.
+      - CreateNamespace=true
+      # Measured on the rendered v1.21.1 chart (ADR 0003): clusterissuers
+      # 325,798 B, issuers 325,660 B, challenges 269,173 B — all over
+      # client-side apply's 262,144 B limit.
+      - ServerSideApply=true
+  ignoreDifferences:
+    # Both webhook configurations ship without a caBundle; cainjector writes
+    # one at runtime, so without these the app is OutOfSync from first sync.
+    # Scoped by name, same reasoning as base/metallb.
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: cert-manager-webhook
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: cert-manager-webhook
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle

@@ -1,0 +1,9 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+spec:
+  source:
+    # Chart version tracks appVersion 1:1, and carries the leading "v".
+    targetRevision: "v1.21.1"
