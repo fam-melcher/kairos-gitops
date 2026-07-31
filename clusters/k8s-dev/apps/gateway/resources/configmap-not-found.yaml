@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-not-found
+  namespace: envoy-gateway-system
+data:
+  # Key name is fixed — Envoy Gateway reads response.body and nothing else.
+  response.body: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>404 — no service here</title>
+      <style>
+        html { color-scheme: light dark; }
+        body {
+          font: 16px/1.6 system-ui, sans-serif;
+          max-width: 32rem;
+          margin: 20vh auto 0;
+          padding: 0 1.5rem;
+        }
+        h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+        p { margin: 0; opacity: .7; }
+        code { font-size: .9em; }
+      </style>
+    </head>
+    <body>
+      <h1>404 — no service here</h1>
+      <p>Nothing is published on this hostname. If you expected something,
+         it has no route attached to the gateway yet.</p>
+    </body>
+    </html>

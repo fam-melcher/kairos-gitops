@@ -1,0 +1,38 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: HTTPRouteFilter
+metadata:
+  name: not-found
+  namespace: envoy-gateway-system
+spec:
+  directResponse:
+    statusCode: 404
+    contentType: text/html
+    body:
+      type: ValueRef
+      valueRef:
+        group: ""
+        kind: ConfigMap
+        name: gateway-not-found
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: not-found
+  namespace: envoy-gateway-system
+spec:
+  parentRefs:
+    - name: main
+  # Wildcard on purpose: an app's own HTTPRoute names an exact hostname, and
+  # Gateway API ranks a non-wildcard hostname above a wildcard one, so this
+  # only serves hostnames nothing else claims. It does not intercept 404s
+  # produced by a backend that *is* routed.
+  hostnames:
+    - "*.k8s-prod.home.fam-melcher.net"
+  rules:
+    # No backendRefs — the filter terminates the request itself.
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: gateway.envoyproxy.io
+            kind: HTTPRouteFilter
+            name: not-found
