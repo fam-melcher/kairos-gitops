@@ -1,0 +1,23 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # No email. The field is optional, cannot be sourced from a Secret, and
+    # bought nothing after Let's Encrypt stopped sending expiry notifications
+    # on 2025-06-04. See ADR 0011.
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      # DNS-01 only: these names never resolve to a publicly reachable
+      # address, so HTTP-01 cannot work. See ADR 0011.
+      - dns01:
+          cloudflare:
+            # Created out-of-band in the cert-manager namespace
+            # (clusterResourceNamespace). Needs Zone:DNS:Edit and
+            # Zone:Zone:Read across all zones.
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token

@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-config
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Points back at this repo, same as base/metallb-config and base/gateway
+    # (ADR 0007).
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/cert-manager-config/version-patch.yaml.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Same posture as metallb-config, for the same reason (ADR 0008): nothing
+    # orders this against base/cert-manager, and the chart's webhook is
+    # failurePolicy: Fail on cert-manager resources, so a first sync can be
+    # rejected at admission. selfHeal does not reattempt a failed sync; retry
+    # does.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      # Covers the first sync landing before the CRDs are registered.
+      - SkipDryRunOnMissingResource=true
+      # CreateNamespace=true is NOT set — base/cert-manager owns the
+      # cert-manager namespace (ADR 0004).
+      # ServerSideApply=true is NOT set — two small CRs.

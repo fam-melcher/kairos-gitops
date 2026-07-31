@@ -13,3 +13,5 @@ resources:
   - apps/envoy-gateway
   - apps/gateway
   - apps/ceph-csi-rbd
+  - apps/cert-manager
+  - apps/cert-manager-config
