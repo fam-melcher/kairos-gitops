@@ -1,0 +1,42 @@
+# A broken clusters/<name>/kustomization.yaml does not fail one app — it fails
+# the root Application's whole render for that cluster, so every app there
+# stops reconciling (ADR 0005). This job is what stands between that and main.
+name: render
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  kustomize-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install kustomize v5.8.1
+        run: |
+          set -euo pipefail
+          url=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz
+          curl -fsSL -o kustomize.tar.gz "${url}"
+          echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  kustomize.tar.gz" | sha256sum -c -
+          tar -xzf kustomize.tar.gz
+          sudo install -m 0755 kustomize /usr/local/bin/kustomize
+
+      - name: Build every cluster
+        run: |
+          set -euo pipefail
+          built=0
+          for dir in clusters/*/; do
+            echo "::group::${dir}"
+            kustomize build "${dir}" > rendered.yaml
+            grep -q '^kind: Application$' rendered.yaml \
+              || { echo "${dir} rendered no Application"; exit 1; }
+            grep -c '^kind: ' rendered.yaml
+            echo "::endgroup::"
+            built=$((built + 1))
+          done
+          [ "${built}" -ge 2 ] || { echo "expected at least 2 clusters, built ${built}"; exit 1; }

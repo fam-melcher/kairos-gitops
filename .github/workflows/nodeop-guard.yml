@@ -1,0 +1,45 @@
+# Bounds the blast radius of a node operation to one node per pull request.
+# No NodeOp/NodeOpUpgrade manifest exists in this repo yet; this must be in
+# place before one ever can. See ADR 0013.
+name: nodeop-guard
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  nodeop-guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The guard reads each changed file's pre-image at the merge base.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet 'pyyaml==6.0.3'
+
+      # The repo holds no node operations, so the check below inspects nothing
+      # and passes. This step is what tells that apart from a guard that has
+      # silently stopped detecting: it replays 21 throwaway pull requests in a
+      # temporary git repository and asserts the guard's verdict on each.
+      - name: Self-test the guard
+        run: .github/scripts/nodeop_guard_selftest.sh
+
+      # The diff is deliberately unscoped. ArgoCD builds each cluster with
+      # kustomize's root-only load restriction, whose root is the repository
+      # checkout — so a kustomization under clusters/ can pull a resource from
+      # any tracked path, and a `-- clusters/` filter would miss a manifest
+      # parked elsewhere and referenced by one added line.
+      - name: Check this pull request
+        run: |
+          set -euo pipefail
+          base="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
+          git diff --name-status -z --diff-filter=ACMRT -M "${base}" HEAD > changes.z
+          python3 .github/scripts/nodeop_guard.py --changes changes.z --base "${base}"

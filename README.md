@@ -67,6 +67,7 @@ See [`docs/adr/`](docs/adr/) for the reasoning behind this shape.
 | `metallb-config` | That cluster's `IPAddressPool` + `L2Advertisement` | address |
 | `envoy-gateway` | Envoy Gateway, implementing Gateway API — no `Ingress` (ADR 0009) | version |
 | `gateway` | That cluster's `GatewayClass` + `Gateway` | listener hostname |
+| `kairos-operator` | The Kairos node operator, from upstream's `config/default` Kustomize directory — the `NodeOp`/`NodeOpUpgrade`/`OSArtifact` CRDs and their controller, under its own `AppProject` (ADR 0012, ADR 0013) | version |
 
 Bumping one cluster's version ahead of the other is a one-line change to
 that cluster's `clusters/<name>/apps/<app>/version-patch.yaml`.

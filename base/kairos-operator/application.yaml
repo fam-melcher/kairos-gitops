@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kairos-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Not "default": this is the only app here whose CRDs can reboot a node, and
+  # the only one installing cluster-scoped RBAC it did not author. See ADR 0013.
+  project: kairos-operator
+  source:
+    # Upstream's own Kustomize directory, same shape as base/argocd and
+    # base/metallb. The repo also ships charts/kairos-operator, but that chart
+    # is published only as a GitHub release asset — no Helm repository, no OCI
+    # registry — so ArgoCD cannot source it (ADR 0012).
+    repoURL: https://github.com/kairos-io/kairos-operator
+    path: config/default
+    # targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/kairos-operator/version-patch.yaml. This file alone
+    # is not a valid, deployable Application (same rule as base/argocd).
+  destination:
+    server: https://kubernetes.default.svc
+    # config/default carries `namespace: operator-system` itself, so every
+    # namespaced object it renders already names it.
+    namespace: operator-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Upstream states this is required: its CRDs, "in particular
+      # OSArtifact", exceed the 262 kB last-applied-configuration annotation
+      # limit and fail with "metadata.annotations: Too long" under client-side
+      # apply (kairos.io/operator-docs/installation). Corroborated on the
+      # rendered v0.2.2 tree: that CRD is 338,756 YAML bytes. See ADR 0012.
+      - ServerSideApply=true
+      # CreateNamespace=true is NOT set — config/default ships
+      # Namespace/operator-system itself. Two owners for one object is ADR
+      # 0004's failure mode.
+      # PrunePropagationPolicy=foreground is NOT set — it is already ArgoCD
+      # v3.4.5's documented default.
+      # PruneLast=true and SkipDryRunOnMissingResource=true are NOT set — this
+      # app installs its own CRDs, syncs no CRs, and has no prune ordering.

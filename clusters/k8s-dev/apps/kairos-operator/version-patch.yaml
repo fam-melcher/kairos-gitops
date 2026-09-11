@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kairos-operator
+  namespace: argocd
+spec:
+  source:
+    # Newest release. config/default at any tag pins the *previous* release's
+    # images — v0.2.2 renders operator and node-labeler v0.2.1 — because the
+    # bump commit lands after the tag. The NodeOp and NodeOpUpgrade CRDs are
+    # byte-identical between v0.2.1 and v0.2.2 (ADR 0012).
+    targetRevision: "v0.2.2"

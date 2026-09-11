@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kairos-operator
+  namespace: argocd
+spec:
+  description: kairos-operator's upstream install manifests, and nothing else.
+  sourceRepos:
+    - https://github.com/kairos-io/kairos-operator
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: operator-system
+  # Exactly the kinds `kustomize build config/default` emits at v0.2.2 —
+  # measured, not assumed. An upstream release adding a kind fails this app's
+  # sync closed until the list is updated, which is the point (ADR 0013).
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+  # No roles: nothing needs a project token.
+  # No orphanedResources: the operator creates untracked children of its own in
+  # operator-system (a node-labeler DaemonSet, per-node Jobs, their RBAC), and
+  # orphan monitoring would flag every one of them.
