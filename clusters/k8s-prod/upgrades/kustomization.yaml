@@ -7,3 +7,4 @@ resources:
   # it is done. The file and the object carry the target version in their name,
   # so a new round is a new object rather than an edit to a finished one
   # (ADR 0014). Empty between rounds — the namespace keeps this build valid.
+  - hadron-prod-v0-5-1-k3s-v1-35-8.yaml
