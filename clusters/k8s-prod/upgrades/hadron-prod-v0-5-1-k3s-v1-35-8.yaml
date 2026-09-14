@@ -1,0 +1,29 @@
+# Upgrade round: Kairos v4.1.2 -> v4.3.0, k3s v1.35.5 -> v1.35.8 (same minor).
+#
+# The name carries both versions because two hadron v0.5.1 tags exist and only
+# the k3s part distinguishes them; a reused name would read as a spec update,
+# whose behaviour upstream declares undefined (ADR 0014).
+#
+# Checked before opening this pull request:
+#   - quay.io tag exists, pushed 2026-09-08,
+#     digest sha256:13ccc4723311b980217d7e79f571dcd1097f45309a9c8de9c327d8a07b485ba3
+#   - it is the newest tag on the k3s 1.35 line; the 1.36 line is a separate,
+#     later decision
+#   - image pre-pulled on every node (the preflight Pod's 120 s deadline covers
+#     pull and unpack)
+#   - etcd snapshot taken and copied off-node
+#   - all nodes Ready, etcd reporting healthy members
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOpUpgrade
+metadata:
+  name: hadron-prod-v0-5-1-k3s-v1-35-8
+  namespace: kairos-system
+spec:
+  image: quay.io/kairos/hadron:v0.5.1-standard-amd64-generic-v4.3.0-k3s-v1.35.8-k3s1
+  nodeSelector:
+    matchLabels:
+      kairos.io/managed: "true"
+  # One node at a time: the operator holds the slot until the node has rebooted
+  # and rejoined, and stops the round if one does not (ADR 0014).
+  concurrency: 1
+  stopOnFailure: true
