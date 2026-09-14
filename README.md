@@ -28,7 +28,8 @@ clusters/
     └── apps/
         └── <app>/
 docs/
-└── adr/                    # architecture decisions for this repo
+├── adr/                    # architecture decisions for this repo
+└── runbooks/               # node upgrade, abort, rollback, etcd snapshot
 .github/
 ├── workflows/              # render, nodeop-guard
 ├── scripts/                # the node-operation guards and their self-tests
@@ -67,9 +68,15 @@ path — so a kustomization that does not build is caught here rather than
 by a cluster that quietly stopped reconciling. `nodeop-guard` bounds node
 operations: merging a `NodeOp`/`NodeOpUpgrade` has the operator drain and
 reboot the nodes it selects, so at most **one** may be introduced or
-become reachable per pull request, and it must name a single node by
-`kubernetes.io/hostname`. Both guards run from the merge base, not from
-the pull request they are checking.
+become reachable per pull request, and it must either name a single node
+by `kubernetes.io/hostname` or take the cluster one node at a time
+(`concurrency: 1`, `stopOnFailure: true` — ADR 0014). Both guards run
+from the merge base, not from the pull request they are checking.
+
+An OS upgrade is one reviewed `NodeOpUpgrade` under
+`clusters/<cluster>/upgrades/`, carrying the target version in its name,
+removed again when the round is done — see
+[`docs/runbooks/node-upgrade.md`](docs/runbooks/node-upgrade.md).
 
 See [`docs/adr/`](docs/adr/) for the reasoning behind this shape.
 
@@ -83,6 +90,7 @@ See [`docs/adr/`](docs/adr/) for the reasoning behind this shape.
 | `envoy-gateway` | Envoy Gateway, implementing Gateway API — no `Ingress` (ADR 0009) | version |
 | `gateway` | That cluster's `GatewayClass` + `Gateway` | listener hostname |
 | `kairos-operator` | The Kairos node operator, from upstream's `config/default` Kustomize directory — the `NodeOp`/`NodeOpUpgrade`/`OSArtifact` CRDs and their controller, under its own `AppProject` (ADR 0012, ADR 0013) | version |
+| `kairos-upgrade` | That cluster's Kairos OS upgrade round: one `NodeOpUpgrade` at a time, under its own `AppProject`, empty between rounds (ADR 0014) | upgrade image |
 
 Bumping one cluster's version ahead of the other is a one-line change to
 that cluster's `clusters/<name>/apps/<app>/version-patch.yaml`.

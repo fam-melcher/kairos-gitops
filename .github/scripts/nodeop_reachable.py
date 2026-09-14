@@ -13,8 +13,10 @@ and at the pull request head, and enforces the same two invariants on what is
 newly reachable:
 
 1. Cardinality: at most one node operation becomes reachable per pull request.
-2. Selector singularity: each newly reachable node operation selects exactly one
-   node by kubernetes.io/hostname (rules in nodeop_common.check_selector).
+2. Bounded blast radius: each newly reachable node operation either names one
+   node by kubernetes.io/hostname, or is a NodeOpUpgrade taking the cluster one
+   node at a time with concurrency: 1 and stopOnFailure: true (rules and
+   evidence in nodeop_common.check_bounded).
 
 Reachability is ArgoCD's own closure, walked the way ArgoCD walks it. The seeds
 are `clusters/*/` — the paths kairos-configs points each cluster's root
@@ -51,7 +53,7 @@ import os
 import subprocess
 import sys
 
-from nodeop_common import (canonical, check_selector, decode_manifest, describe,
+from nodeop_common import (canonical, check_bounded, decode_manifest, describe,
                            is_node_op, parse_strict)
 
 # This repository, in every spelling an Application might use. Compared after
@@ -379,7 +381,7 @@ def main():
             f"this pull request makes {len(newly)} node operations reachable, "
             f"maximum is 1: {listed}")
     for where, document in newly:
-        violations.extend(check_selector(f"{where} ({describe(document)})", document))
+        violations.extend(check_bounded(f"{where} ({describe(document)})", document))
 
     print(f"nodeop-reachable: {len(newly)} node operation(s) newly reachable, "
           f"{carried} unchanged")

@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kairos-upgrade
+  namespace: argocd
+spec:
+  source:
+    # HEAD, matching the root Application kairos-configs bootstraps — not a tag,
+    # and not "main". A sub-Application pinned elsewhere while its parent
+    # follows HEAD gives two views of the same repo in one cluster.
+    targetRevision: HEAD
+    path: clusters/k8s-prod/upgrades

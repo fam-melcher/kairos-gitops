@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kairos-system
+  labels:
+    # The operator runs the upgrade Job, the preflight Pod and the reboot Pod of
+    # a NodeOpUpgrade in this namespace: privileged, HostPID, host filesystem
+    # mounted. k3s enforces no restricted PSA baseline today, so these labels
+    # are inert — they are here so that enabling PSA cluster-wide later does not
+    # silently break node upgrades.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

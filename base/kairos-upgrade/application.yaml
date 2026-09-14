@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kairos-upgrade
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Its own project, not kairos-operator's: that one allows the upstream repo
+  # into operator-system, this one allows this repo into kairos-system. A shared
+  # project would be the union of both, which is wider than either app needs
+  # (ADR 0014).
+  project: kairos-upgrade
+  source:
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/kairos-upgrade/path-patch.yaml, the same shape
+    # metallb-config and gateway use (ADR 0007).
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kairos-system
+  syncPolicy:
+    automated:
+      # Required: an upgrade round ends by removing its manifest, and the
+      # object has to go with it. It is also the sharp edge — pruning a
+      # NodeOpUpgrade mid-flight cascade-deletes its NodeOp and Jobs, and
+      # handleDeletion does not uncordon (nodeop_controller.go), so the node is
+      # left cordoned with nothing to release it. Never land a change here while
+      # a round is running (docs/runbooks/node-upgrade.md).
+      prune: true
+      # DELIBERATELY false — the only Application in this repo where drift is a
+      # feature. The documented abort is `kubectl delete nodeopupgrade`; with
+      # selfHeal, ArgoCD recreates it within seconds, and because the child
+      # NodeOp was cascade-deleted with it the recreated object looks new and
+      # the upgrade re-runs.
+      #
+      # Honest limit: this holds the abort only until the next commit lands on
+      # main. targetRevision is HEAD, so any commit changes the target revision,
+      # clears ArgoCD's "already attempted" guard and re-syncs. The abort
+      # runbook therefore ends with a PR, not with the delete.
+      selfHeal: false
+    # Same mechanism metallb-config uses, for the same reason (ADR 0008): on a
+    # fresh provision this app and kairos-operator sync concurrently, nothing
+    # orders them, and a NodeOpUpgrade cannot apply before its CRD is
+    # registered. Sync waves are not used in this repo — Application has no
+    # health assessment, so a wave would document an intent the mechanism does
+    # not deliver.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      # Covers the dry run against a CRD that is not registered yet. Between
+      # rounds this app syncs a namespace and nothing else, so the exposure is
+      # the first sync after a provision.
+      - SkipDryRunOnMissingResource=true
+      # CreateNamespace is NOT set: kairos-system is an explicit manifest under
+      # upgrades/, so it can carry Pod Security Admission labels.
+      # ServerSideApply is NOT set: one small CR and one namespace.

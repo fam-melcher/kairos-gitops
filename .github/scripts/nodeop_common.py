@@ -142,19 +142,39 @@ def describe(document):
     return f"{document.get('kind')}/{name}"
 
 
-def check_selector(where, document):
+def check_bounded(where, document):
     """Return a list of violation strings for one node operation.
 
-    The rule is "cannot reach more than one node", not "looks like one label".
-    `matchLabels` is an AND, so `kubernetes.io/hostname` present and naming a
-    node is already the bound: any further label can only narrow, and the
-    upgrade runbook's manifests carry `kairos.io/managed: "true"` alongside the
-    hostname on purpose. `matchExpressions` is the one that can widen — an `In`
-    list over three nodes reads like a selector and upgrades a cluster — and is
-    rejected on the key's presence, not on its truthiness: `matchExpressions: []`
-    is harmless, but a guard that accepts a key its ADR calls rejected cannot be
-    read from its documentation, and the next edit to an accepted key is not
-    empty.
+    The rule is "this cannot take the cluster down at once", and there are two
+    ways to satisfy it. Upstream documents the second one as the way to upgrade
+    a cluster, so the guard has to allow it (ADR 0014):
+
+    1. **One named node.** `spec.nodeSelector.matchLabels` names
+       `kubernetes.io/hostname` with a non-empty string. Further labels may sit
+       beside it — `matchLabels` is an AND, so they only narrow.
+
+    2. **The whole cluster, one node at a time.** No hostname, but
+       `concurrency: 1` and `stopOnFailure: true` on a `NodeOpUpgrade`. The
+       operator holds the concurrency slot until the node is back: a node counts
+       as in flight while `Phase=Completed && RebootStatus=pending`
+       (`countRunningJobs`, nodeop_controller.go), and that only clears when the
+       reboot Pod — `restartPolicy: OnFailure`, with infinite NoExecute
+       tolerations so it survives the reboot it causes — comes back up, finds
+       its own annotation and exits 0. So node two starts after node one has
+       rejoined, and `stopOnFailure` halts the round if it does not.
+
+    `matchExpressions` is rejected in both: an `In` list over three nodes reads
+    like a selector and upgrades three nodes at once, and it is rejected on the
+    key's presence rather than on its truthiness so that the guard and the ADR
+    describe the same legal manifest.
+
+    Mode 2 is `NodeOpUpgrade` only. A `NodeOp` runs an arbitrary command and has
+    no version comparison to skip nodes that need nothing, so "every node, one
+    at a time" is every node, without exception — that one names a host.
+
+    `force: true` is refused in mode 2 for the same reason: it disables the
+    preflight version check, turning a round that would have skipped up-to-date
+    nodes into a reboot of every node in the cluster.
     """
     spec = document.get("spec")
     if not isinstance(spec, dict):
@@ -167,10 +187,33 @@ def check_selector(where, document):
     if "matchExpressions" in selector:
         return [f"{where}: spec.nodeSelector.matchExpressions is not allowed"]
     labels = selector.get("matchLabels")
-    if not isinstance(labels, dict) or HOSTNAME not in labels:
-        return [f"{where}: spec.nodeSelector.matchLabels must name {HOSTNAME}, "
-                f"got {sorted(labels) if isinstance(labels, dict) else labels!r}"]
-    value = labels[HOSTNAME]
-    if not isinstance(value, str) or not value.strip():
-        return [f"{where}: {HOSTNAME} must be a non-empty string"]
-    return []
+    if not isinstance(labels, dict) or not labels:
+        return [f"{where}: spec.nodeSelector.matchLabels must hold at least one label"]
+
+    if HOSTNAME in labels:
+        value = labels[HOSTNAME]
+        if not isinstance(value, str) or not value.strip():
+            return [f"{where}: {HOSTNAME} must be a non-empty string"]
+        return []
+
+    # No hostname: the cluster-wide, one-at-a-time shape.
+    violations = []
+    if document.get("kind") != "NodeOpUpgrade":
+        violations.append(
+            f"{where}: a {document.get('kind')} without {HOSTNAME} runs on every "
+            f"node; only NodeOpUpgrade may select a cluster, because only it "
+            f"skips nodes already at the target version")
+    if spec.get("concurrency") != 1:
+        violations.append(
+            f"{where}: selects more than one node, so it must set concurrency: 1 "
+            f"(got {spec.get('concurrency')!r})")
+    if spec.get("stopOnFailure") is not True:
+        violations.append(
+            f"{where}: selects more than one node, so it must set "
+            f"stopOnFailure: true (got {spec.get('stopOnFailure')!r})")
+    if spec.get("force") is True:
+        violations.append(
+            f"{where}: force: true disables the preflight version check, so this "
+            f"would reboot every selected node; name a single "
+            f"{HOSTNAME} to use it")
+    return violations

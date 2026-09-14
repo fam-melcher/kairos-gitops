@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kairos-upgrade
+  namespace: argocd
+spec:
+  description: Kairos node upgrades for this cluster, and nothing else.
+  sourceRepos:
+    - https://github.com/fam-melcher/kairos-gitops
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: kairos-system
+  # This is the narrowest project in the repo, and the app with the most
+  # consequential object. Exactly two kinds: the namespace the operator runs its
+  # privileged Jobs in, and the CR that starts an upgrade. A NodeOp — the
+  # run-any-command kind — is deliberately absent: adding one is a reviewed
+  # amendment, not something an edit under upgrades/ can reach (ADR 0014).
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: operator.kairos.io
+      kind: NodeOpUpgrade

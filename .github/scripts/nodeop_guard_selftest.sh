@@ -22,7 +22,7 @@ failures=0
 cases=0
 # Every case below must run. A case deleted or commented out would otherwise
 # lower the bar in silence, which is the failure mode this script exists for.
-expected_cases=25
+expected_cases=30
 
 good_nodeop() {
   # $1 = metadata.name, $2 = hostname
@@ -36,6 +36,24 @@ spec:
   nodeSelector:
     matchLabels:
       kubernetes.io/hostname: $2
+YAML
+}
+
+canary_upgrade() {
+  # The shape upstream documents for upgrading a cluster: no hostname, one node
+  # at a time, halt on the first failure. $1 = name, $2..$4 = overrides.
+  cat <<YAML
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOpUpgrade
+metadata:
+  name: $1
+spec:
+  image: example.invalid/hadron:v1
+  nodeSelector:
+    matchLabels:
+      kairos.io/managed: "true"
+  concurrency: ${2:-1}
+  stopOnFailure: ${3:-true}
 YAML
 }
 
@@ -278,6 +296,37 @@ run_case 1 "two node operations in a UTF-16 file"
 reset_repo
 printf '&a\nkind: SomeList\nitems:\n  - *a\n' > clusters/demo/apps/thing/loop.yaml
 run_case 2 "a self-referential kind: List is an error, not a hang"
+
+# 26. the upstream cluster upgrade: no hostname, concurrency 1, stopOnFailure.
+#     The operator holds the concurrency slot until the node has rebooted and
+#     rejoined, so this is one node at a time, not a fleet reboot (ADR 0014).
+reset_repo
+canary_upgrade round-one > clusters/demo/apps/thing/a.yaml
+run_case 0 "cluster-wide upgrade, one node at a time"
+
+# 27. the same without stopOnFailure: a node that fails to come back does not
+#     halt the round
+reset_repo
+canary_upgrade round-one 1 false > clusters/demo/apps/thing/a.yaml
+run_case 1 "cluster-wide upgrade without stopOnFailure"
+
+# 28. and with concurrency 2, which is two nodes draining at once
+reset_repo
+canary_upgrade round-one 2 true > clusters/demo/apps/thing/a.yaml
+run_case 1 "cluster-wide upgrade with concurrency 2"
+
+# 29. force: true disables the preflight version check, so a cluster-wide round
+#     reboots every node rather than skipping the ones already upgraded
+reset_repo
+{ canary_upgrade round-one; printf '  force: true\n'; } > clusters/demo/apps/thing/a.yaml
+run_case 1 "cluster-wide upgrade with force: true"
+
+# 30. a NodeOp — arbitrary command, no version comparison — has no
+#     already-done node to skip, so cluster-wide is not available to it
+reset_repo
+printf 'apiVersion: operator.kairos.io/v1alpha1\nkind: NodeOp\nmetadata:\n  name: c\nspec:\n  command: ["true"]\n  nodeSelector:\n    matchLabels:\n      kairos.io/managed: "true"\n  concurrency: 1\n  stopOnFailure: true\n' \
+  > clusters/demo/apps/thing/a.yaml
+run_case 1 "cluster-wide NodeOp is not allowed"
 
 cd /
 if [ "${failures}" -ne 0 ]; then

@@ -26,7 +26,7 @@ failures=0
 cases=0
 # Every case below must run. A case deleted or commented out would otherwise
 # lower the bar in silence, which is the failure mode this script exists for.
-expected_cases=37
+expected_cases=39
 
 SELF_REPO="https://github.com/fam-melcher/kairos-gitops"
 
@@ -43,6 +43,24 @@ spec:
   nodeSelector:
     matchLabels:
       kubernetes.io/hostname: $2
+YAML
+}
+
+canary_upgrade() {
+  # $1 = name, $2 = concurrency (default 1)
+  cat <<YAML
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOpUpgrade
+metadata:
+  name: $1
+  namespace: kairos-system
+spec:
+  image: example.invalid/hadron:v1
+  nodeSelector:
+    matchLabels:
+      kairos.io/managed: "true"
+  concurrency: ${2:-1}
+  stopOnFailure: true
 YAML
 }
 
@@ -452,6 +470,19 @@ seed_pair
 for tree in "${base}" "${head}"; do rm "${tree}/clusters/demo/content/kustomization.yaml"; done
 printf '&a\nkind: SomeList\nitems:\n  - *a\n' > "${head}/clusters/demo/content/loop.yaml"
 run_case 2 "a self-referential kind: List is an error, not a hang"
+
+# 35. the upstream cluster upgrade, reachable: one object for the cluster, taken
+#     one node at a time (ADR 0014)
+seed_pair
+canary_upgrade round-one > "${head}/clusters/demo/content/a.yaml"
+reference "${head}" a.yaml
+run_case 0 "a reachable cluster-wide upgrade, one node at a time"
+
+# 36. the same with concurrency 2 — two nodes draining at once
+seed_pair
+canary_upgrade round-one 2 > "${head}/clusters/demo/content/a.yaml"
+reference "${head}" a.yaml
+run_case 1 "a reachable cluster-wide upgrade with concurrency 2"
 
 if [ "${cases}" -ne "${expected_cases}" ]; then
   echo "nodeop-reachable self-test: ran ${cases} cases, expected ${expected_cases}"
