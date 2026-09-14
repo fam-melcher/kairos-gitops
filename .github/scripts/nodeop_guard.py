@@ -9,13 +9,15 @@ before anything references it:
    NodeOp/NodeOpUpgrade document. The operator reconciles each object
    independently — `concurrency` is a per-object field — so two objects merged
    together drain and reboot two nodes at once.
-2. Selector singularity: every introduced or altered NodeOp/NodeOpUpgrade must
-   select exactly one node, by kubernetes.io/hostname and nothing else. An
-   absent spec.nodeSelector targets every node in the cluster
-   (kairos-operator v0.2.2, internal/controller/nodeop_controller.go:1338);
-   NodeOpUpgrade reaches the same code by constructing a NodeOp in
-   nodeopupgrade_controller.go's createNodeOp, which copies the selector
-   verbatim, so one rule covers both kinds.
+2. Bounded blast radius: every introduced or altered NodeOp/NodeOpUpgrade must
+   either name one node by kubernetes.io/hostname, or be a NodeOpUpgrade that
+   takes the cluster one node at a time — concurrency: 1 and stopOnFailure:
+   true, the shape upstream documents for a cluster upgrade. An absent
+   spec.nodeSelector targets every node at once (kairos-operator v0.2.2,
+   internal/controller/nodeop_controller.go:1338); NodeOpUpgrade reaches the
+   same code by constructing a NodeOp in nodeopupgrade_controller.go's
+   createNodeOp, which copies the selector verbatim, so one rule covers both
+   kinds. nodeop_common.check_bounded holds the detail.
 
 What a diff cannot see is a document that was already in the repository and
 becomes *reachable* — one pull request adds an unreferenced manifest, a later
@@ -55,7 +57,7 @@ import collections
 import subprocess
 import sys
 
-from nodeop_common import canonical, check_selector, decode_manifest, describe, node_ops
+from nodeop_common import canonical, check_bounded, decode_manifest, describe, node_ops
 
 
 def read_worktree(path):
@@ -150,7 +152,7 @@ def main():
             f"this pull request introduces or alters {len(introduced)} node "
             f"operations, maximum is 1: {listed}")
     for path, document in introduced:
-        violations.extend(check_selector(f"{path} ({describe(document)})", document))
+        violations.extend(check_bounded(f"{path} ({describe(document)})", document))
 
     print(f"nodeop-guard: {len(changes)} changed path(s); "
           f"{len(introduced)} node operation(s) introduced or altered, "

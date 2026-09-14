@@ -236,24 +236,26 @@ pull request changed:
    operations on both sides, and counts only what is new or changed. A document
    carried along unchanged by an edit elsewhere in the same file does not count,
    and a rename with no content change does not count.
-2. **Selector singularity.** Every introduced or altered `NodeOp`/`NodeOpUpgrade`
-   must carry `spec.nodeSelector.matchLabels` naming `kubernetes.io/hostname`
-   with a non-empty string, and must not carry `matchExpressions`. The rule is
-   "cannot reach more than one node", not "looks like one label":
-   `matchLabels` is an AND, so a hostname plus `kairos.io/managed: "true"` —
-   the shape the upgrade runbook writes deliberately — can only narrow, and
-   rejecting it would mean rejecting the more explicit manifest. What can widen
-   is `matchExpressions`: an `In` list over three nodes reads like a selector
-   and upgrades a cluster. It is rejected on the key's presence rather than on
-   its truthiness, because `matchExpressions: []` is harmless in itself but a
-   guard that accepts a key this ADR calls rejected cannot be read from its own
-   documentation, and the next edit to an accepted key is not empty. Verified
-   against the CRD schemas at `v0.2.2`: both kinds expose `spec.nodeSelector` as
-   a `metav1.LabelSelector`, and it is **not required** —
+2. **Bounded blast radius.** Every introduced or altered
+   `NodeOp`/`NodeOpUpgrade` must either name one node with
+   `kubernetes.io/hostname`, or be a `NodeOpUpgrade` taking the cluster one node
+   at a time (`concurrency: 1`, `stopOnFailure: true`). `matchExpressions` is
+   rejected on the key's presence in both cases — an `In` list over three nodes
+   reads like a selector and upgrades three nodes — while further `matchLabels`
+   are fine, since `matchLabels` is an AND and can only narrow. Verified against
+   the CRD schemas at `v0.2.2`: both kinds expose `spec.nodeSelector` as a
+   `metav1.LabelSelector`, and it is **not required** —
    `internal/controller/nodeop_controller.go` targets *all* nodes when it is
    nil, and `NodeOpUpgrade` reaches that same code by constructing a `NodeOp`
    in `nodeopupgrade_controller.go`'s `createNodeOp`, copying the selector
-   verbatim, which is why one rule is correct for both kinds.
+   verbatim, which is why one rule covers both kinds.
+
+   **Amended by ADR 0014.** This rule originally demanded a single hostname and
+   nothing else. That would have rejected the four-field manifest upstream
+   documents for upgrading a cluster, which ADR 0014 adopts after establishing
+   that the operator holds a node's concurrency slot until the node has rebooted
+   and rejoined. ADR 0014 holds the two modes, why mode 2 is `NodeOpUpgrade`-only,
+   and why it refuses `force: true`.
 
 Two scoping decisions follow from the same reasoning. The guard **parses every
 changed path regardless of its name** — Kustomize reads `resources:` entries by
@@ -342,8 +344,8 @@ A node operation arriving from a third-party repo is a reason to give
 **Both guards self-test before they are trusted.** No node operation manifest
 exists in this repo, so both checks inspect zero documents and pass — which is
 indistinguishable from a guard that has silently stopped detecting. So the job
-first runs `nodeop_guard_selftest.sh` (25 pull requests replayed through a
-throwaway git repository) and `nodeop_reachable_selftest.sh` (37 assertions over
+first runs `nodeop_guard_selftest.sh` (30 pull requests replayed through a
+throwaway git repository) and `nodeop_reachable_selftest.sh` (39 assertions over
 rendered tree pairs, built with the same pinned kustomize CI uses). Each case
 asserts the exit code the guard must return, and each script asserts its own
 case count, so a case deleted rather than fixed fails the run instead of
@@ -353,10 +355,12 @@ Confirmed by sabotage, measured rather than assumed — each number is how many
 cases fail when that one behaviour is removed. Check one: disabling the
 cardinality branch fails 7 cases, filtering changed paths down to names ending
 `.yaml` fails 2, skipping the pre-image comparison fails 1. Check two: disabling
-cardinality fails 9, refusing to follow self-referencing `Application`s fails 26,
-dropping directory-type rendering fails 7, skipping the selector rule fails 2.
-In the shared module, dropping `kind: List` expansion and dropping byte-order-mark
-decoding each fail 1 case in *both* self-tests. A green `nodeop-guard` means "the
+cardinality fails 9, refusing to follow self-referencing `Application`s fails 28,
+dropping directory-type rendering fails 8, skipping the bounded-blast-radius rule
+fails 3. In the shared module, dropping `kind: List` expansion and dropping
+byte-order-mark decoding each fail 1 case in *both* self-tests, and dropping
+either half of the cluster-wide rule — the `concurrency: 1` check or the
+`stopOnFailure: true` check — fails 1 each. A green `nodeop-guard` means "the
 guards detect, and found nothing", not "nothing was looked at".
 
 **The guards that enforce are the merge base's copies.** A pull request that
@@ -444,13 +448,10 @@ second maintainer exists, and `CODEOWNERS` is in place for that day.
   intended reading — one node reboots at a time, whichever cluster it is in —
   but it is not what "one node per cluster" would mean, and the runbook's
   dev-before-prod rule already separates the two into different pull requests.
-- The upgrade plan's `k8s-dev` "option A" — one manifest with no hostname
-  selector, upgrading every node in a round under `concurrency: 1` — does not
-  merge under this guard, on either cluster. That is deliberate: `concurrency`
-  frees its slot when a reboot is *initiated*, not when the node returns, so the
-  option it describes is the race the per-node shape exists to avoid. `k8s-dev`
-  upgrades one node per pull request like `k8s-prod`, or this ADR gets an
-  amendment that says why not.
+- The one-node-per-pull-request budget is about how many node operations a merge
+  may start, not how many nodes one of them may eventually touch. A single
+  `NodeOpUpgrade` upgrading a whole cluster one node at a time is one operation
+  (ADR 0014); two of them in one pull request is still a rejection.
 - When `kairos-upgrade` lands, `kairos-operator`'s `AppProject` gains a second
   consumer, a second destination namespace (`kairos-system`), this repository as
   a second `sourceRepo`, and `NodeOpUpgrade` in its

@@ -16,3 +16,4 @@ resources:
   - apps/cert-manager
   - apps/cert-manager-config
   - apps/kairos-operator
+  - apps/kairos-upgrade
