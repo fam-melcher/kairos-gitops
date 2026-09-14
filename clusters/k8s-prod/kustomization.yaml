@@ -15,3 +15,4 @@ resources:
   - apps/ceph-csi-rbd
   - apps/cert-manager
   - apps/cert-manager-config
+  - apps/kairos-operator

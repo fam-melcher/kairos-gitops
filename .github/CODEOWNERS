@@ -1,0 +1,24 @@
+# Ownership for the paths where a mistake reboots a node or disarms the check
+# that would have caught it.
+#
+# @fam-melcher is an organisation, and an organisation cannot own code — GitHub
+# requires a user or a team — so the owner is spelled as the user.
+#
+# One maintainer means "require review from Code Owners" cannot be satisfied on
+# main: GitHub does not accept a pull request's author as its approver. Until a
+# second maintainer exists this file is documentation and notification, and the
+# branch protection that actually enforces is the required status checks
+# (ADR 0013).
+
+*                           @Vonor
+
+# The guards, their self-tests, and the workflows that run them. A pull request
+# can edit these and the job still reports success — see the merge-base note in
+# .github/workflows/nodeop-guard.yml.
+/.github/                   @Vonor
+
+# Privileged node operations. A merged manifest here has ArgoCD create a
+# NodeOpUpgrade, which runs a privileged, HostPID container with the host
+# filesystem mounted on the targeted node, and reboots it.
+/clusters/*/upgrades/       @Vonor
+/base/kairos-operator/      @Vonor
