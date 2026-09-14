@@ -29,6 +29,11 @@ clusters/
         └── <app>/
 docs/
 └── adr/                    # architecture decisions for this repo
+.github/
+├── workflows/              # render, nodeop-guard
+├── scripts/                # the node-operation guards and their self-tests
+├── actions/kustomize/      # one pinned kustomize for both jobs
+└── CODEOWNERS
 ```
 
 Each cluster's root `Application` (bootstrapped by kairos-configs) syncs
@@ -55,6 +60,16 @@ Once rendered, each `Application` reconciles independently: one app's
 *sync* failure does not affect another's. Note this is sync-time
 isolation only — `clusters/<name>/` is a single Kustomize build, so a
 malformed *overlay* fails the whole cluster's render.
+
+Two checks run on every pull request (ADR 0013). `render` builds every
+root ArgoCD renders — each cluster plus each child `Application`'s own
+path — so a kustomization that does not build is caught here rather than
+by a cluster that quietly stopped reconciling. `nodeop-guard` bounds node
+operations: merging a `NodeOp`/`NodeOpUpgrade` has the operator drain and
+reboot the nodes it selects, so at most **one** may be introduced or
+become reachable per pull request, and it must name a single node by
+`kubernetes.io/hostname`. Both guards run from the merge base, not from
+the pull request they are checking.
 
 See [`docs/adr/`](docs/adr/) for the reasoning behind this shape.
 

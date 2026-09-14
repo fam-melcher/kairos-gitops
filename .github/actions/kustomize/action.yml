@@ -1,0 +1,31 @@
+# One pinned, checksum-verified kustomize for every job that renders. Two jobs
+# need the identical binary — `render` builds each cluster, `nodeop-guard`
+# renders the whole Application closure — and two copies of an install snippet
+# drift in exactly the field that matters, the version.
+name: Install kustomize
+description: Installs a pinned kustomize release, verified against its published checksum.
+
+runs:
+  using: composite
+  steps:
+    - name: Install kustomize v5.8.1
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The release below is the linux/amd64 tarball and the checksum is that
+        # file's. `runs-on: ubuntu-24.04` is amd64 today and one edit from
+        # ubuntu-24.04-arm, where the download would fail the checksum for a
+        # reason nobody would guess from the message.
+        arch="$(uname -m)"
+        [ "${arch}" = "x86_64" ] || { echo "this action pins the amd64 release; runner is ${arch}"; exit 1; }
+        if command -v kustomize >/dev/null && kustomize version | grep -q 'v5.8.1'; then
+          exit 0
+        fi
+        url=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz
+        tmp="$(mktemp -d)"
+        curl -fsSL -o "${tmp}/kustomize.tar.gz" "${url}"
+        echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  ${tmp}/kustomize.tar.gz" | sha256sum -c -
+        tar -xzf "${tmp}/kustomize.tar.gz" -C "${tmp}"
+        sudo install -m 0755 "${tmp}/kustomize" /usr/local/bin/kustomize
+        rm -rf "${tmp}"
+        kustomize version

@@ -19,6 +19,10 @@ trap 'rm -rf "${work}"' EXIT
 
 repo="${work}/repo"
 failures=0
+cases=0
+# Every case below must run. A case deleted or commented out would otherwise
+# lower the bar in silence, which is the failure mode this script exists for.
+expected_cases=25
 
 good_nodeop() {
   # $1 = metadata.name, $2 = hostname
@@ -57,6 +61,7 @@ run_case() {
   # without it a case named "renamed file" can silently degrade into an add and
   # stop exercising the path it claims to cover.
   local want="$1" label="$2" want_status="${3:-}" got=0
+  cases=$((cases + 1))
   git -C "${repo}" add -A
   git -C "${repo}" diff --name-status -z --diff-filter=ACMRT -M --cached "${base}" \
     > "${work}/changes.z"
@@ -178,36 +183,109 @@ printf 'apiVersion: operator.kairos.io/v1alpha1\nkind: NodeOp\nmetadata:\n  name
   > clusters/demo/apps/thing/a.yaml
 run_case 1 "matchExpressions selector"
 
-# 17. two matchLabels
+# 17. an empty matchExpressions list beside a valid hostname label. It selects
+#     the one node the label names, so this is not a blast-radius violation —
+#     it is rejected because ADR 0013 says the key is not allowed, and a guard
+#     that accepts a key it documents as rejected is a guard nobody can read.
+reset_repo
+printf 'apiVersion: operator.kairos.io/v1alpha1\nkind: NodeOp\nmetadata:\n  name: x\nspec:\n  command: ["true"]\n  nodeSelector:\n    matchExpressions: []\n    matchLabels:\n      kubernetes.io/hostname: node-a\n' \
+  > clusters/demo/apps/thing/a.yaml
+run_case 1 "empty matchExpressions list"
+
+# 18. a hostname plus a second label. matchLabels is an AND, so the second one
+#     narrows and cannot widen — and the upgrade runbook's own manifests carry
+#     kairos.io/managed: "true" beside the hostname deliberately.
 reset_repo
 printf 'apiVersion: operator.kairos.io/v1alpha1\nkind: NodeOp\nmetadata:\n  name: t\nspec:\n  command: ["true"]\n  nodeSelector:\n    matchLabels:\n      kubernetes.io/hostname: node-a\n      kairos.io/managed: "true"\n' \
   > clusters/demo/apps/thing/a.yaml
-run_case 1 "two matchLabels"
+run_case 0 "a hostname plus a narrowing label"
 
-# 18. a selector that is not a hostname
+# 19. a selector that is not a hostname
 reset_repo
 printf 'apiVersion: operator.kairos.io/v1alpha1\nkind: NodeOp\nmetadata:\n  name: w\nspec:\n  command: ["true"]\n  nodeSelector:\n    matchLabels:\n      kairos.io/managed: "true"\n' \
   > clusters/demo/apps/thing/a.yaml
 run_case 1 "selector is not a hostname"
 
-# 19. B2 — a file named as YAML that does not parse must fail loudly
+# 20. B2 — a file named as YAML that does not parse must fail loudly
 reset_repo
 printf 'a:\n  - b\n c: [\n' > clusters/demo/apps/thing/broken.yaml
 run_case 2 "malformed .yaml is a hard error"
 
-# 20. B2 — a non-YAML text file is skipped in silence
+# 21. B2 — a non-YAML text file is skipped in silence
 reset_repo
 printf 'def f():\n    return {"kind": "NodeOp"}\n' > clusters/demo/apps/thing/script.py
 run_case 0 "a python file is skipped"
 
-# 21. B2 — a binary file is skipped in silence
+# 22. B2 — a binary file is skipped in silence
 reset_repo
 printf '\x00\x01\x02\xff\xfe kind: NodeOp\n' > clusters/demo/apps/thing/blob.bin
 run_case 0 "a binary file is skipped"
+
+# 23. two node operations wrapped in a kind: List. ArgoCD unwraps a List before
+#     anything else sees it, so a guard that does not is reading one document of
+#     an unrecognised kind where the cluster gets two node operations.
+reset_repo
+python3 - <<'PYEOF'
+item = """  - apiVersion: operator.kairos.io/v1alpha1
+    kind: NodeOpUpgrade
+    metadata:
+      name: %s
+    spec:
+      image: example.invalid/image:tag
+      nodeSelector:
+        matchLabels:
+          kubernetes.io/hostname: %s
+"""
+with open("clusters/demo/apps/thing/list.yaml", "w") as handle:
+    handle.write("apiVersion: v1\nkind: List\nitems:\n")
+    handle.write(item % ("upgrade-a", "node-a"))
+    handle.write(item % ("upgrade-b", "node-b"))
+PYEOF
+run_case 1 "two node operations inside a kind: List"
+
+# 24. a UTF-16 manifest. ArgoCD decodes the byte-order mark and applies what is
+#     inside; treating it as binary and skipping it reads zero where the cluster
+#     reads two.
+reset_repo
+python3 - <<'PYEOF'
+docs = """apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOpUpgrade
+metadata:
+  name: upgrade-a
+spec:
+  image: example.invalid/image:tag
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/hostname: node-a
+---
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOpUpgrade
+metadata:
+  name: upgrade-b
+spec:
+  image: example.invalid/image:tag
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/hostname: node-b
+"""
+open("clusters/demo/apps/thing/utf16.yaml", "wb").write(docs.encode("utf-16"))
+PYEOF
+run_case 1 "two node operations in a UTF-16 file"
+
+# 25. a List that contains itself through a YAML alias. PyYAML builds the
+#     recursive object happily; expanding it without a bound never returns, and
+#     a job that hangs is a check that reports nothing.
+reset_repo
+printf '&a\nkind: SomeList\nitems:\n  - *a\n' > clusters/demo/apps/thing/loop.yaml
+run_case 2 "a self-referential kind: List is an error, not a hang"
 
 cd /
 if [ "${failures}" -ne 0 ]; then
   echo "nodeop-guard self-test: ${failures} case(s) wrong — the guard is not trustworthy"
   exit 1
 fi
-echo "nodeop-guard self-test: all 21 cases correct"
+if [ "${cases}" -ne "${expected_cases}" ]; then
+  echo "nodeop-guard self-test: ran ${cases} cases, expected ${expected_cases}"
+  exit 1
+fi
+echo "nodeop-guard self-test: all ${cases} cases correct"

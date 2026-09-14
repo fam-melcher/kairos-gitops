@@ -1,6 +1,7 @@
-# A broken clusters/<name>/kustomization.yaml does not fail one app — it fails
-# the root Application's whole render for that cluster, so every app there
-# stops reconciling (ADR 0005). This job is what stands between that and main.
+# A broken kustomization does not fail one app — a cluster root's failure stops
+# every app on that cluster from reconciling (ADR 0005), and a child
+# Application's failure stops whatever that app syncs. This job is what stands
+# between either and main.
 name: render
 
 on:
@@ -14,29 +15,50 @@ permissions:
 jobs:
   kustomize-build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install kustomize v5.8.1
-        run: |
-          set -euo pipefail
-          url=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz
-          curl -fsSL -o kustomize.tar.gz "${url}"
-          echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  kustomize.tar.gz" | sha256sum -c -
-          tar -xzf kustomize.tar.gz
-          sudo install -m 0755 kustomize /usr/local/bin/kustomize
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
 
-      - name: Build every cluster
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet 'pyyaml==6.0.3'
+
+      - uses: ./.github/actions/kustomize
+
+      # The roots come from the same closure walk nodeop-guard uses, rather than
+      # from a `clusters/*/` glob: this repo's child Applications sync their own
+      # paths (ADR 0007), and a glob would leave those unbuilt until the guard
+      # tripped over them with an error about node operations.
+      - name: Build every root ArgoCD renders
         run: |
           set -euo pipefail
+          python3 .github/scripts/nodeop_reachable.py --list-roots . > roots.txt
+          cat roots.txt
           built=0
-          for dir in clusters/*/; do
-            echo "::group::${dir}"
-            kustomize build "${dir}" > rendered.yaml
-            grep -q '^kind: Application$' rendered.yaml \
-              || { echo "${dir} rendered no Application"; exit 1; }
+          while read -r kind root; do
+            if [ "${kind}" != "kustomize" ]; then
+              echo "${root}: directory-type source, nothing to build"
+              continue
+            fi
+            echo "::group::${root}"
+            kustomize build "${root}" > rendered.yaml
             grep -c '^kind: ' rendered.yaml
             echo "::endgroup::"
             built=$((built + 1))
+          done < roots.txt
+          [ "${built}" -ge 2 ] || { echo "expected at least 2 roots, built ${built}"; exit 1; }
+
+      # Two assertions stop a vacuous pass on the roots that matter most.
+      - name: Every cluster renders an Application
+        run: |
+          set -euo pipefail
+          clusters=0
+          for dir in clusters/*/; do
+            kustomize build "${dir}" | grep -q '^kind: Application$' \
+              || { echo "${dir} rendered no Application"; exit 1; }
+            clusters=$((clusters + 1))
           done
-          [ "${built}" -ge 2 ] || { echo "expected at least 2 clusters, built ${built}"; exit 1; }
+          [ "${clusters}" -ge 2 ] || { echo "expected at least 2 clusters, saw ${clusters}"; exit 1; }

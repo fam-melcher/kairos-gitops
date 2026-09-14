@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Guard the two invariants that bound a node operation's blast radius.
+"""Bound a node operation's blast radius by what a pull request changed.
+
+This is one of two guards, and it is the cheaper, earlier one. It reads the
+diff, so it catches a node operation the moment its text enters the repository,
+before anything references it:
 
 1. Cardinality: a pull request may introduce or alter at most one
    NodeOp/NodeOpUpgrade document. The operator reconciles each object
@@ -12,6 +16,14 @@
    NodeOpUpgrade reaches the same code by constructing a NodeOp in
    nodeopupgrade_controller.go's createNodeOp, which copies the selector
    verbatim, so one rule covers both kinds.
+
+What a diff cannot see is a document that was already in the repository and
+becomes *reachable* — one pull request adds an unreferenced manifest, a later
+one adds it to a `resources:` list. Nothing here changes, and a node reboots.
+`nodeop_reachable.py` closes that by comparing what ArgoCD would render; it is
+the load-bearing check, and this one is the net that catches the same class of
+mistake a merge earlier. Neither subsumes the other's failure mode: a rendering
+blind spot in one is not a diff blind spot in the other.
 
 "Introduced or altered" is computed per changed file, by comparing the node
 operations in the file's pre-image at the merge base against those in its
@@ -43,54 +55,19 @@ import collections
 import subprocess
 import sys
 
-import yaml
-
-GROUP = "operator.kairos.io/"
-KINDS = ("NodeOp", "NodeOpUpgrade")
-HOSTNAME = "kubernetes.io/hostname"
-YAML_SUFFIXES = (".yaml", ".yml")
-
-
-def looks_like_yaml(path):
-    return path.lower().endswith(YAML_SUFFIXES)
-
-
-def node_ops(text, path):
-    """Return the NodeOp/NodeOpUpgrade documents in one YAML stream."""
-    try:
-        documents = list(yaml.safe_load_all(text))
-    except yaml.YAMLError as err:
-        if looks_like_yaml(path):
-            print(f"ERROR: {path} is named as YAML but does not parse: {err}")
-            sys.exit(2)
-        return []          # not YAML at all — a .py, a .md, a log file
-    except RecursionError:
-        print(f"ERROR: {path} could not be parsed safely")
-        sys.exit(2)
-    found = []
-    for document in documents:
-        if not isinstance(document, dict):
-            continue
-        if not str(document.get("apiVersion", "")).startswith(GROUP):
-            continue
-        if document.get("kind") in KINDS:
-            found.append(document)
-    return found
-
-
-def canonical(document):
-    return yaml.safe_dump(document, sort_keys=True, default_flow_style=False)
+from nodeop_common import canonical, check_selector, decode_manifest, describe, node_ops
 
 
 def read_worktree(path):
     try:
         with open(path, "rb") as handle:
-            return handle.read().decode("utf-8")
-    except UnicodeDecodeError:
-        return None        # binary
+            raw = handle.read()
     except OSError as err:
         print(f"ERROR: cannot read {path}: {err}")
         sys.exit(2)
+    # None means binary. A byte-order-marked UTF-16 file is not binary: ArgoCD
+    # decodes it and applies what is inside (nodeop_common.decode_manifest).
+    return decode_manifest(raw)
 
 
 def read_git(base, path):
@@ -100,10 +77,7 @@ def read_git(base, path):
     )
     if result.returncode != 0:
         return None        # absent at the merge base
-    try:
-        return result.stdout.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
+    return decode_manifest(result.stdout)
 
 
 def parse_changes(blob):
@@ -133,32 +107,6 @@ def parse_changes(blob):
             print(f"ERROR: unexpected diff status {status!r}")
             sys.exit(2)
     return changes
-
-
-def check_selector(path, document):
-    """Return a list of violation strings for one document."""
-    name = document.get("metadata", {}).get("name", "<unnamed>") \
-        if isinstance(document.get("metadata"), dict) else "<unnamed>"
-    where = f"{path} ({document['kind']}/{name})"
-    spec = document.get("spec")
-    if not isinstance(spec, dict):
-        return [f"{where}: no spec"]
-    selector = spec.get("nodeSelector")
-    if selector is None:
-        return [f"{where}: no spec.nodeSelector — this targets every node"]
-    if not isinstance(selector, dict):
-        return [f"{where}: spec.nodeSelector is not a label selector"]
-    if selector.get("matchExpressions"):
-        return [f"{where}: spec.nodeSelector.matchExpressions is not allowed"]
-    labels = selector.get("matchLabels")
-    if not isinstance(labels, dict) or len(labels) != 1:
-        return [f"{where}: spec.nodeSelector.matchLabels must hold exactly one label"]
-    if HOSTNAME not in labels:
-        return [f"{where}: the one label must be {HOSTNAME}, got {sorted(labels)[0]}"]
-    value = labels[HOSTNAME]
-    if not isinstance(value, str) or not value.strip():
-        return [f"{where}: {HOSTNAME} must be a non-empty string"]
-    return []
 
 
 def main():
@@ -197,13 +145,12 @@ def main():
 
     violations = []
     if len(introduced) > 1:
-        listed = ", ".join(f"{p}:{d['kind']}/{d.get('metadata', {}).get('name', '?')}"
-                           for p, d in introduced)
+        listed = ", ".join(f"{p}:{describe(d)}" for p, d in introduced)
         violations.append(
             f"this pull request introduces or alters {len(introduced)} node "
             f"operations, maximum is 1: {listed}")
     for path, document in introduced:
-        violations.extend(check_selector(path, document))
+        violations.extend(check_selector(f"{path} ({describe(document)})", document))
 
     print(f"nodeop-guard: {len(changes)} changed path(s); "
           f"{len(introduced)} node operation(s) introduced or altered, "
