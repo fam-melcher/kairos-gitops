@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Infrastructure plumbing, no distinct-tenant blast radius the way the
+  # Keycloak Operator has (no reboot-capable CRD found in this design's
+  # review) — but see opencode/human/RISKS.md #4: its ClusterRole/webhook
+  # privileges were not audited this round, and this position must be
+  # reconfirmed once they are.
+  project: default
+  source:
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/cnpg-operator/version-patch.yaml. Wrapped in a
+    # local single-resource Kustomize base (below) because CNPG publishes a
+    # single raw manifest, not a Kustomize dir — no existing app in this
+    # repo sources a raw manifest directly, so this keeps every app's source
+    # shape as a Kustomize path, consistent with the rest of this repo.
+  destination:
+    server: https://kubernetes.default.svc
+    # CNPG's own manifest ships this namespace (verified: first document in
+    # the fetched cnpg-1.30.0.yaml is kind: Namespace, name: cnpg-system —
+    # opencode/agents/reports/keycloak-01.md §2). Named here only for
+    # destination validation; CreateNamespace is NOT set below.
+    namespace: cnpg-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Measured: clusters.postgresql.cnpg.io (463,926 B) and
+      # poolers.postgresql.cnpg.io (653,469 B) both exceed the 262,144-byte
+      # SSA threshold (opencode/agents/reports/keycloak-01.md §3).
+      - ServerSideApply=true
+      # CreateNamespace=true is deliberately NOT set — the manifest is the
+      # Namespace's owner (ADR 0004/0010's rule against two owners for one
+      # object).

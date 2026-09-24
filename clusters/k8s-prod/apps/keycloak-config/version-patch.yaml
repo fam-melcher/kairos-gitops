@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-config
+  namespace: argocd
+spec:
+  source:
+    # HEAD, matching cert-manager-config/metallb-config's own root
+    # Application bootstrap revision.
+    targetRevision: HEAD
+    path: clusters/k8s-prod/apps/keycloak-config/resources

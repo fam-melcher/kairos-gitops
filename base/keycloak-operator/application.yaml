@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Not "default": this operator holds write access to Secrets (DB, admin,
+  # client credentials) cluster/namespace-wide and its blast radius is
+  # "every identity that trusts this cluster's Keycloak realm" — a distinct
+  # tenant by ADR 0013's own framing, even though it does not reboot nodes.
+  project: keycloak-operator
+  source:
+    # Upstream's own Kustomize directory (ADR 0004 — same pattern as
+    # kairos-operator/argocd/metallb). Rejected the Bitnami chart: a
+    # third-party repackaging of upstream, the provenance problem ADR
+    # 0004/0010 already named.
+    repoURL: https://github.com/keycloak/keycloak-k8s-resources
+    path: kubernetes
+    # targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/keycloak-operator/version-patch.yaml.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Measured, not assumed: keycloaks.k8s.keycloak.org (519,514 B) and
+      # keycloakrealmimports.k8s.keycloak.org (>=426,291 B) both exceed the
+      # 262,144-byte last-applied-configuration annotation limit at 26.7.4
+      # (opencode/agents/reports/keycloak-01.md §3).
+      - ServerSideApply=true
+      # CreateNamespace=true: verified the kubernetes.yml install manifest
+      # ships no Namespace object; upstream's own docs instruct a manual
+      # `kubectl create namespace keycloak` prerequisite. This repo owns the
+      # namespace (opencode/agents/reports/keycloak-01.md §2).
+      - CreateNamespace=true

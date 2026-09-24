@@ -1,0 +1,10 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-operator
+  namespace: argocd
+spec:
+  source:
+    # Pinned stable release, verified current (not nightly) as of this
+    # design round — see opencode/agents/reports/keycloak-01.md §1.
+    targetRevision: "26.7.4"
