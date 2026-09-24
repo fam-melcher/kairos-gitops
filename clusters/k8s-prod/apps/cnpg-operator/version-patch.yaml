@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-operator
+  namespace: argocd
+spec:
+  source:
+    # HEAD, matching cert-manager-config/metallb-config's own root
+    # Application bootstrap revision — not a tag, this repo's own commits
+    # govern which CNPG release URL is embedded in the kustomization below.
+    targetRevision: HEAD
+    # Points at the local Kustomize wrapper (this dir) whose kustomization.yaml
+    # embeds CNPG's pinned 1.30.0 raw manifest URL directly as a resource —
+    # see clusters/k8s-prod/apps/cnpg-operator/kustomization.yaml. No other
+    # per-cluster value exists to override today — CNPG has one consumer
+    # (k8s-prod) — this file still exists per this repo's one-version-patch-
+    # per-app convention, ready for a second cluster to diverge later.
+    path: clusters/k8s-prod/apps/cnpg-operator

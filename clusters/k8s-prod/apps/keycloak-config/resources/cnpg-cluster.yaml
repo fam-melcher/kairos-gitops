@@ -1,0 +1,20 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cnpg-keycloak
+  namespace: keycloak
+spec:
+  instances: 1
+  storageClass: <CEPH-CSI-RBD-STORAGECLASS-NAME>
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+      # No secret named — CNPG auto-generates `cnpg-keycloak-app` (the
+      # `<cluster-name>-app` convention) if none is supplied. See
+      # opencode/human/DESIGN.md §4: prefer auto-generation over a
+      # hand-applied fixed password unless a human decides otherwise
+      # (opencode/human/OPEN-QUESTIONS.md, "Inputs only a human can supply"
+      # #3).

@@ -53,3 +53,42 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+
+    # Exact-hostname listener isolating the cluster's own identity issuer
+    # from the shared wildcard listeners above. Fix for security-01 BLOCKER
+    # #1: any HTTPRoute author in any namespace can attach to the wildcard
+    # listeners (from: All) and, without this, could have attached a
+    # more-specific route for this same hostname and won Gateway API's route
+    # precedence, hijacking the Keycloak login/token endpoints. A dedicated
+    # Gateway object was rejected (needs its own MetalLB address; ADR 0006
+    # explicitly defers that to the internet-facing-split case, not this).
+    # `from: Same` was also rejected: "Same" means the Gateway's own
+    # namespace (envoy-gateway-system), not Keycloak's, which would force
+    # the HTTPRoute out of its workload's namespace. See
+    # opencode/agents/reports/architect-02.md.
+    - name: keycloak
+      protocol: HTTPS
+      port: 443
+      hostname: "keycloak.k8s-prod.home.fam-melcher.net"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          # Distinct from wildcard-k8s-prod-tls — cert-manager derives its
+          # own Certificate/Secret pair per listener with a hostname (ADR
+          # 0011). Neither object is in git.
+          - kind: Secret
+            group: ""
+            name: keycloak-tls
+      allowedRoutes:
+        namespaces:
+          # The auto-populated kubernetes.io/metadata.name label needs no
+          # coordination with however keycloak-operator/keycloak-config end
+          # up shipping the namespace object — it always exists. This is the
+          # actual admission control; non-wildcard hostnames already rank
+          # above the wildcard listener in Gateway API's own precedence
+          # rules regardless, but Selector is what stops a hostile
+          # namespace's Route from attaching to this listener at all.
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak

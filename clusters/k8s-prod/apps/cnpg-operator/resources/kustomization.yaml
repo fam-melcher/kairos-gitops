@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Wraps CNPG's own single-file upstream release manifest as a remote
+# resource. Kustomize accepts a URL directly in `resources:`; this keeps
+# the source shape a Kustomize path (matching every other app in this
+# repo) without vendoring or rewriting upstream content (ADR 0004/0012).
+resources:
+  - https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.0.yaml

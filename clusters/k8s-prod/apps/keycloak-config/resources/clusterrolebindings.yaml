@@ -1,0 +1,28 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kairos-cluster-admins
+subjects:
+  # TODO(verifier): see opencode/human/OPEN-QUESTIONS.md #2 — bare name
+  # assumed; change to "/cluster-admins" together with keycloakrealmimport.yaml
+  # if the realm's group-membership mapper emits full paths instead.
+  - kind: Group
+    name: cluster-admins
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kairos-cluster-viewers
+subjects:
+  - kind: Group
+    name: cluster-viewers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io

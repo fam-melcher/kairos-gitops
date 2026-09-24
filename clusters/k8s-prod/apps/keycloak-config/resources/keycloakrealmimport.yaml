@@ -1,0 +1,38 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: kairos-realm
+  namespace: keycloak
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: kairos
+    enabled: true
+    # security-01 BLOCKER #2 fix (opencode/agents/reports/keycloak-02.md,
+    # confirmed closed by opencode/agents/reports/security-02.md): closes
+    # self-registration as a path into cluster-admins/cluster-viewers.
+    registrationAllowed: false
+    registrationEmailAsUsername: false
+    groups:
+      - name: cluster-admins
+      - name: cluster-viewers
+    # Deliberately NO `defaultGroups` key at all. RealmRepresentation's
+    # defaultGroups auto-enrolls every new user into the listed group paths;
+    # omitting it entirely (rather than including it without the privileged
+    # groups) is the safest form and needs no future maintainer to remember
+    # never to add "/cluster-admins" to it.
+    clients:
+      - clientId: kubectl
+        publicClient: true
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        attributes:
+          pkce.code.challenge.method: "S256"
+        redirectUris:
+          - "http://localhost:8000/callback"
+          - "http://localhost:18000/callback"
+    # TODO(verifier): opencode/human/OPEN-QUESTIONS.md #2 — confirm whether
+    # the realm's default "Group Membership" protocol mapper emits bare
+    # group names or full paths ("/cluster-admins"); the ClusterRoleBinding
+    # subjects in resources/clusterrolebindings.yaml assume bare names and
+    # must be changed together with this if that assumption is wrong.

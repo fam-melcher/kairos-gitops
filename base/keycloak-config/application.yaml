@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-config
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Points back at this repo, same shape as base/metallb-config and
+    # base/cert-manager-config (ADR 0007).
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/keycloak-config/version-patch.yaml.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Same posture as metallb-config/cert-manager-config/gateway (ADR 0008):
+    # this app's CRs (Keycloak, KeycloakRealmImport, CNPG Cluster) can sync
+    # before keycloak-operator's/cnpg-operator's CRDs register on a fresh
+    # provision.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - SkipDryRunOnMissingResource=true
+      # CreateNamespace=true is NOT set — base/keycloak-operator's
+      # Application owns the `keycloak` namespace (ADR 0004).
+      # ServerSideApply=true is NOT set — this app's own CRs (not CRDs) are
+      # small.

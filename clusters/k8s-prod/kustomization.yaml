@@ -17,3 +17,6 @@ resources:
   - apps/cert-manager-config
   - apps/kairos-operator
   - apps/kairos-upgrade
+  - apps/keycloak-operator
+  - apps/cnpg-operator
+  - apps/keycloak-config
