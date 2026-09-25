@@ -9,10 +9,16 @@ spec:
     # Application bootstrap revision — not a tag, this repo's own commits
     # govern which CNPG release URL is embedded in the kustomization below.
     targetRevision: HEAD
-    # Points at the local Kustomize wrapper (this dir) whose kustomization.yaml
-    # embeds CNPG's pinned 1.30.0 raw manifest URL directly as a resource —
-    # see clusters/k8s-prod/apps/cnpg-operator/kustomization.yaml. No other
-    # per-cluster value exists to override today — CNPG has one consumer
-    # (k8s-prod) — this file still exists per this repo's one-version-patch-
-    # per-app convention, ready for a second cluster to diverge later.
-    path: clusters/k8s-prod/apps/cnpg-operator
+    # Points at the resources/ subdirectory, whose kustomization.yaml embeds
+    # CNPG's pinned 1.30.0 raw manifest URL directly as a resource — see
+    # clusters/k8s-prod/apps/cnpg-operator/resources/kustomization.yaml.
+    # This dir (clusters/k8s-prod/apps/cnpg-operator/) is the app-of-apps
+    # overlay that renders the Application/AppProject objects themselves
+    # (base/cnpg-operator + this patch) — pointing the Application's own
+    # source at it was circular (an Application whose source is itself) and
+    # additionally violated the destination (renders into argocd, but this
+    # Application's spec.destination.namespace is cnpg-system). Every other
+    # content-carrying app in this repo points at its resources/
+    # subdirectory (cert-manager-config, gateway, keycloak-config,
+    # metallb-config) — this now matches that convention.
+    path: clusters/k8s-prod/apps/cnpg-operator/resources
