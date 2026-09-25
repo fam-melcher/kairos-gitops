@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-config
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Its own project, not kairos-operator's or kairos-upgrade's — see ADR 0015.
+  project: node-config
+  source:
+    repoURL: https://github.com/fam-melcher/kairos-gitops
+    # path and targetRevision intentionally absent — supplied per cluster by
+    # clusters/<name>/apps/node-config/path-patch.yaml, the same shape
+    # kairos-upgrade/metallb-config/gateway use (ADR 0007).
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kairos-system
+  syncPolicy:
+    automated:
+      prune: true
+      # Unlike kairos-upgrade's selfHeal: false — a completed NodeOp is
+      # documented upstream as one-shot; re-applying an unchanged manifest
+      # verbatim after selfHeal is inert, not hazardous. The actual
+      # protection is nodeop-guard's one-node-per-pull-request cardinality
+      # rule at merge time (ADR 0013), not this setting (ADR 0015).
+      selfHeal: true
+    # Same mechanism metallb-config/kairos-upgrade use, for the same reason
+    # (ADR 0008): kairos-operator (which owns the NodeOp CRD) is already
+    # installed by the time this app exists, so this is consistency with
+    # every other content-carrying app rather than a load-bearing setting.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - SkipDryRunOnMissingResource=true
+      # CreateNamespace is NOT set — kairos-system already exists, owned by
+      # kairos-upgrade's namespace.yaml (ADR 0014/0015).
+      # ServerSideApply is NOT set — NodeOp objects are small.
