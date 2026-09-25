@@ -1,0 +1,72 @@
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOp
+metadata:
+  # New config content needs a new name, not an edit to this one — see
+  # ADR 0016's "if the OIDC flags ever need to change" consequence. This
+  # object is meant to exist indefinitely, not to be replaced per round the
+  # way NodeOpUpgrade's per-version names work (ADR 0014) — the version
+  # fragment here would be misleading, since nothing about this object's
+  # own lifecycle is versioned; only its content is, on the rare occasion
+  # it changes.
+  name: k3s-oidc-config
+  namespace: kairos-system
+spec:
+  # Every current and future k8s-prod server node carries this label by
+  # construction — k3s itself applies it. No hostname: this NodeOp is
+  # meant to reach a node this repo has never heard of yet, the moment it
+  # joins (ADR 0016).
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/control-plane: "true"
+  image: quay.io/kairos/hadron
+  # "Has this already run on this node?" Checks the durable /oem source
+  # file, not the ephemeral /etc path materialized from it at boot — the
+  # file that persists across reboots is the one worth checking.
+  preflight:
+    command:
+      - sh
+      - -c
+      - |
+        if [ -f /host/oem/90-k3s-oidc.yaml ]; then
+          echo "90-k3s-oidc.yaml already present" > /dev/termination-log
+        fi
+        exit 0
+  # Only runs if preflight reports "proceed" (empty termination log).
+  command:
+    - sh
+    - -c
+    - |
+      set -e
+      cat > /host/oem/90-k3s-oidc.yaml << 'EOF'
+      #cloud-config
+      stages:
+        initramfs:
+          - name: "write k3s OIDC drop-in"
+            commands:
+              - mkdir -p /etc/rancher/k3s/config.yaml.d
+            files:
+              - path: /etc/rancher/k3s/config.yaml.d/90-oidc.yaml
+                permissions: 0600
+                owner: 0
+                group: 0
+                content: |
+                  kube-apiserver-arg:
+                    - oidc-issuer-url=https://keycloak.k8s-prod.home.fam-melcher.net/realms/fam-melcher
+                    - oidc-client-id=kubectl
+                    - oidc-username-claim=preferred_username
+                    - oidc-groups-claim=groups
+      EOF
+      sync
+  hostMountPath: /host
+  cordon: true
+  drainOptions:
+    enabled: true
+  # Writing the file alone does nothing until k3s restarts and re-reads
+  # config.yaml.d — the reboot is what actually applies the flags.
+  rebootOnSuccess: true
+  # Bounds this exactly the way NodeOpUpgrade bounds a cluster-wide round:
+  # only one control-plane member ever mid-reboot at a time (3-node etcd
+  # quorum safety), and a failure halts the round rather than cascading
+  # into a second node while the first is still down.
+  concurrency: 1
+  stopOnFailure: true
