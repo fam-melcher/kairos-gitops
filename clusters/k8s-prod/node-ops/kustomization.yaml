@@ -1,9 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# One NodeOp per file, one file per PR (nodeop-guard's cardinality rule,
-# ADR 0013/0015). Each targets exactly one node via
-# nodeSelector.matchLabels.kubernetes.io/hostname. Empty for now — this PR
-# only adds the AppProject/Application; the first NodeOp lands in its own
-# follow-up PR.
-resources: []
+# A single, persistent, cluster-wide NodeOp (ADR 0016) — not one-per-node.
+# It stays here indefinitely; a config change means a new file/object name
+# (see the manifest's own header comment), not an edit to this one.
+resources:
+  - k3s-oidc-config.yaml
