@@ -16,6 +16,19 @@ spec:
   # both target.
   hostname:
     hostname: keycloak.k8s-prod.home.fam-melcher.net
+  # Fixes a post-merge outage: without this, http.httpEnabled defaults to
+  # false, so the operator only opens an HTTPS listener (self-signed cert,
+  # port 8443) on the pod/Service — nothing listens on port 8080, which is
+  # what resources/httproute.yaml's backendRef targets. Envoy Gateway then
+  # gets a connection refused/reset trying to reach a port nothing serves
+  # ("upstream connect error ... remote connection failure"). TLS is
+  # already terminated once, at the Gateway's dedicated Keycloak listener
+  # (cert-manager/Let's Encrypt) — this avoids re-terminating TLS a second
+  # time at the pod, which would need a BackendTLSPolicy this repo has no
+  # other precedent for. httpPort left at its default (8080), matching the
+  # HTTPRoute's existing backendRef port.
+  http:
+    httpEnabled: true
   db:
     vendor: postgres
     host: cnpg-keycloak-rw.keycloak.svc
