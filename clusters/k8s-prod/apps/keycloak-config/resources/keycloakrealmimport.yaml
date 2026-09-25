@@ -31,11 +31,34 @@ spec:
         redirectUris:
           - "http://localhost:8000/callback"
           - "http://localhost:18000/callback"
-    # TODO(verifier): opencode/human/OPEN-QUESTIONS.md #2 — confirm whether
-    # the realm's default "Group Membership" protocol mapper emits bare
-    # group names or full paths ("/k8s-admins"); the ClusterRoleBinding
-    # subjects in resources/clusterrolebindings.yaml assume bare names and
-    # must be changed together with this if that assumption is wrong.
+        # Added by hand, live, after discovering the predefined-mapper
+        # shortcut in the Admin Console for a scope named "groups" is
+        # actually a User Realm Role mapper (a different Keycloak concept)
+        # — the real Group Membership mapper has to be added via "By
+        # configuration". Tracked here now so a from-scratch bootstrap
+        # gets it automatically instead of needing the same manual
+        # discovery again. full.path: "true" means the groups claim
+        # carries "/k8s-admins"/"/k8s-users" — resources/
+        # clusterrolebindings.yaml matches this.
+        protocolMappers:
+          - name: groups
+            protocol: openid-connect
+            protocolMapper: oidc-group-membership-mapper
+            config:
+              claim.name: "groups"
+              full.path: "true"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              introspection.token.claim: "true"
+              multivalued: "true"
+    # RESOLVED (was OPEN-QUESTIONS.md #2): confirmed live that the realm's
+    # kubectl-dedicated client scope needed a Group Membership mapper added
+    # by hand (Keycloak's "predefined mapper" shortcut for a scope named
+    # "groups" is actually a User Realm Role mapper — a different Keycloak
+    # concept — and had to be replaced). "Full group path" is ON, so the
+    # groups claim carries "/k8s-admins"/"/k8s-users", not bare names — see
+    # resources/clusterrolebindings.yaml, which matches this.
     #
     # NOTE: KeycloakRealmImport is documented upstream as one-shot — "only
     # supports creation of new realms and does not update or delete those."
