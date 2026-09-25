@@ -29,6 +29,21 @@ spec:
   # HTTPRoute's existing backendRef port.
   http:
     httpEnabled: true
+  # Envoy Gateway terminates TLS at the Gateway and forwards plain HTTP to
+  # this pod — Keycloak only ever sees an HTTP connection from Envoy. Without
+  # this, the Operator's documented fallback ("proxy.headers not specified"
+  # -> legacy proxy=passthrough) makes Keycloak build every URL it generates,
+  # including the admin console's third-party-cookie-check iframe, using the
+  # scheme of the connection it directly sees (http://) rather than the
+  # original client-facing scheme. The browser then refuses to load that
+  # iframe as mixed content on an https:// page, and the console hangs with
+  # "Timeout when waiting for 3rd party check iframe message". `xforwarded`
+  # tells Keycloak to trust the X-Forwarded-Proto/X-Forwarded-Host headers
+  # Envoy Gateway sets on every proxied request — exactly the setting
+  # upstream's own docs show for this same edge-termination-with-custom-
+  # domain topology.
+  proxy:
+    headers: xforwarded
   db:
     vendor: postgres
     host: cnpg-keycloak-rw.keycloak.svc
