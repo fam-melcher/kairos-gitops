@@ -5,8 +5,19 @@ metadata:
   namespace: keycloak
 spec:
   instances: 1
-  storageClass: <CEPH-CSI-RBD-STORAGECLASS-NAME>
   storage:
+    # CNPG's Cluster schema has no top-level spec.storageClass — it belongs
+    # in the StorageConfiguration block. A prior placeholder value at the
+    # wrong top-level key was silently pruned by CRD schema pruning rather
+    # than rejected, which produced no visible error. standard-rwo is this
+    # repo's only real StorageClass (ceph-csi-rbd, see
+    # clusters/k8s-prod/apps/ceph-csi-rbd/helm-values-patch.yaml). It also
+    # happens to be the cluster's default class
+    # (storageclass.kubernetes.io/is-default-class: "true"), which is why
+    # the pruned field previously resolved to the same class by accident —
+    # named explicitly here so the PVC doesn't silently follow a future
+    # change of default class.
+    storageClass: standard-rwo
     size: 5Gi
   bootstrap:
     initdb:
