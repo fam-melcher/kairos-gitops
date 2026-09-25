@@ -3,11 +3,12 @@ kind: ClusterRoleBinding
 metadata:
   name: fam-melcher-k8s-admins
 subjects:
-  # TODO(verifier): see opencode/human/OPEN-QUESTIONS.md #2 — bare name
-  # assumed; change to "/k8s-admins" together with keycloakrealmimport.yaml
-  # if the realm's group-membership mapper emits full paths instead.
+  # Confirmed live: the realm's Group Membership mapper has "Full group
+  # path" ON, so the groups claim carries "/k8s-admins", not "k8s-admins".
+  # Kubernetes' Group subject match is exact-string, so this must carry the
+  # leading slash to match.
   - kind: Group
-    name: k8s-admins
+    name: /k8s-admins
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
@@ -20,7 +21,7 @@ metadata:
   name: fam-melcher-k8s-users
 subjects:
   - kind: Group
-    name: k8s-users
+    name: /k8s-users
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
