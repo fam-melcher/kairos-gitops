@@ -18,7 +18,14 @@ spec:
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/control-plane: "true"
-  image: quay.io/kairos/hadron
+  # quay.io/kairos/hadron does not exist as a pullable container image —
+  # busybox is also the smallest reasonable image for what this actually
+  # runs (a shell writing a file and a preflight test — no Kairos-specific
+  # tooling needed). This is only the ephemeral runtime for the operation
+  # itself; it has no relationship to the node's actual installed OS image
+  # (still whatever Kairos/hadron version the node booted from) — see the
+  # session notes on this distinction.
+  image: busybox:latest
   # "Has this already run on this node?" Checks the durable /oem source
   # file, not the ephemeral /etc path materialized from it at boot — the
   # file that persists across reboots is the one worth checking.
