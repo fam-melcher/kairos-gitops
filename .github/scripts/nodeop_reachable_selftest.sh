@@ -26,7 +26,7 @@ failures=0
 cases=0
 # Every case below must run. A case deleted or commented out would otherwise
 # lower the bar in silence, which is the failure mode this script exists for.
-expected_cases=39
+expected_cases=41
 
 SELF_REPO="https://github.com/fam-melcher/kairos-gitops"
 
@@ -59,6 +59,28 @@ spec:
   nodeSelector:
     matchLabels:
       kairos.io/managed: "true"
+  concurrency: ${2:-1}
+  stopOnFailure: true
+YAML
+}
+
+canary_nodeop_preflight() {
+  # A NodeOp with spec.preflight set (ADR 0016) — see the parallel fixture in
+  # nodeop_guard_selftest.sh. $1 = name, $2 = concurrency (default 1)
+  cat <<YAML
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOp
+metadata:
+  name: $1
+  namespace: kairos-system
+spec:
+  image: example.invalid/image:tag
+  command: ["true"]
+  nodeSelector:
+    matchLabels:
+      kairos.io/managed: "true"
+  preflight:
+    command: ["true"]
   concurrency: ${2:-1}
   stopOnFailure: true
 YAML
@@ -483,6 +505,19 @@ seed_pair
 canary_upgrade round-one 2 > "${head}/clusters/demo/content/a.yaml"
 reference "${head}" a.yaml
 run_case 1 "a reachable cluster-wide upgrade with concurrency 2"
+
+# 37. a NodeOp with spec.preflight set, reachable — the self-check closes the
+#     same gap NodeOpUpgrade's version comparison closes (ADR 0016)
+seed_pair
+canary_nodeop_preflight round-one > "${head}/clusters/demo/content/a.yaml"
+reference "${head}" a.yaml
+run_case 0 "a reachable cluster-wide NodeOp with preflight, one node at a time"
+
+# 38. the same with concurrency 2
+seed_pair
+canary_nodeop_preflight round-one 2 > "${head}/clusters/demo/content/a.yaml"
+reference "${head}" a.yaml
+run_case 1 "a reachable cluster-wide NodeOp with preflight, concurrency 2"
 
 if [ "${cases}" -ne "${expected_cases}" ]; then
   echo "nodeop-reachable self-test: ran ${cases} cases, expected ${expected_cases}"

@@ -22,7 +22,7 @@ failures=0
 cases=0
 # Every case below must run. A case deleted or commented out would otherwise
 # lower the bar in silence, which is the failure mode this script exists for.
-expected_cases=30
+expected_cases=33
 
 good_nodeop() {
   # $1 = metadata.name, $2 = hostname
@@ -52,6 +52,29 @@ spec:
   nodeSelector:
     matchLabels:
       kairos.io/managed: "true"
+  concurrency: ${2:-1}
+  stopOnFailure: ${3:-true}
+YAML
+}
+
+canary_nodeop_preflight() {
+  # A NodeOp with spec.preflight set: the self-check closes the same gap
+  # NodeOpUpgrade's version comparison closes, so cluster-wide is safe under
+  # the same concurrency/stopOnFailure discipline (ADR 0016). $1 = name,
+  # $2..$3 = overrides.
+  cat <<YAML
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOp
+metadata:
+  name: $1
+spec:
+  image: example.invalid/image:tag
+  command: ["true"]
+  nodeSelector:
+    matchLabels:
+      kairos.io/managed: "true"
+  preflight:
+    command: ["true"]
   concurrency: ${2:-1}
   stopOnFailure: ${3:-true}
 YAML
@@ -321,12 +344,28 @@ reset_repo
 { canary_upgrade round-one; printf '  force: true\n'; } > clusters/demo/apps/thing/a.yaml
 run_case 1 "cluster-wide upgrade with force: true"
 
-# 30. a NodeOp — arbitrary command, no version comparison — has no
-#     already-done node to skip, so cluster-wide is not available to it
+# 30. a NodeOp — arbitrary command, no version comparison and no preflight —
+#     has no already-done node to skip, so cluster-wide is not available to it
 reset_repo
 printf 'apiVersion: operator.kairos.io/v1alpha1\nkind: NodeOp\nmetadata:\n  name: c\nspec:\n  command: ["true"]\n  nodeSelector:\n    matchLabels:\n      kairos.io/managed: "true"\n  concurrency: 1\n  stopOnFailure: true\n' \
   > clusters/demo/apps/thing/a.yaml
 run_case 1 "cluster-wide NodeOp is not allowed"
+
+# 31. the same NodeOp, but with spec.preflight set: the self-check closes the
+#     same gap NodeOpUpgrade's version comparison closes (ADR 0016)
+reset_repo
+canary_nodeop_preflight round-one > clusters/demo/apps/thing/a.yaml
+run_case 0 "cluster-wide NodeOp with preflight, one node at a time"
+
+# 32. the same without stopOnFailure
+reset_repo
+canary_nodeop_preflight round-one 1 false > clusters/demo/apps/thing/a.yaml
+run_case 1 "cluster-wide NodeOp with preflight, without stopOnFailure"
+
+# 33. and with concurrency 2 — two nodes draining at once
+reset_repo
+canary_nodeop_preflight round-one 2 true > clusters/demo/apps/thing/a.yaml
+run_case 1 "cluster-wide NodeOp with preflight, concurrency 2"
 
 cd /
 if [ "${failures}" -ne 0 ]; then

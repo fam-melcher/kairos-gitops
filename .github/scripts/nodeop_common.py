@@ -145,36 +145,57 @@ def describe(document):
 def check_bounded(where, document):
     """Return a list of violation strings for one node operation.
 
-    The rule is "this cannot take the cluster down at once", and there are two
-    ways to satisfy it. Upstream documents the second one as the way to upgrade
-    a cluster, so the guard has to allow it (ADR 0014):
+    The rule is "this cannot take the cluster down at once", and there are
+    three ways to satisfy it:
 
     1. **One named node.** `spec.nodeSelector.matchLabels` names
        `kubernetes.io/hostname` with a non-empty string. Further labels may sit
        beside it — `matchLabels` is an AND, so they only narrow.
 
-    2. **The whole cluster, one node at a time.** No hostname, but
-       `concurrency: 1` and `stopOnFailure: true` on a `NodeOpUpgrade`. The
-       operator holds the concurrency slot until the node is back: a node counts
-       as in flight while `Phase=Completed && RebootStatus=pending`
-       (`countRunningJobs`, nodeop_controller.go), and that only clears when the
-       reboot Pod — `restartPolicy: OnFailure`, with infinite NoExecute
-       tolerations so it survives the reboot it causes — comes back up, finds
-       its own annotation and exits 0. So node two starts after node one has
-       rejoined, and `stopOnFailure` halts the round if it does not.
+    2. **The whole cluster, one node at a time, `NodeOpUpgrade`'s version
+       check.** No hostname, but `concurrency: 1` and `stopOnFailure: true` on
+       a `NodeOpUpgrade` (ADR 0014). The operator holds the concurrency slot
+       until the node is back: a node counts as in flight while
+       `Phase=Completed && RebootStatus=pending` (`countRunningJobs`,
+       nodeop_controller.go), and that only clears when the reboot Pod —
+       `restartPolicy: OnFailure`, with infinite NoExecute tolerations so it
+       survives the reboot it causes — comes back up, finds its own
+       annotation and exits 0. So node two starts after node one has rejoined,
+       and `stopOnFailure` halts the round if it does not.
 
-    `matchExpressions` is rejected in both: an `In` list over three nodes reads
-    like a selector and upgrades three nodes at once, and it is rejected on the
-    key's presence rather than on its truthiness so that the guard and the ADR
-    describe the same legal manifest.
+    3. **The whole cluster, one node at a time, a `NodeOp`'s own preflight
+       check.** No hostname, but `spec.preflight` is set, plus the same
+       `concurrency: 1` / `stopOnFailure: true` (ADR 0016). Originally a bare
+       `NodeOp` had no equivalent of mode 2's version comparison to skip a
+       node that needs nothing — every node meant every node, unconditionally.
+       `spec.preflight` closes exactly that gap for the general case: the
+       controller runs it per node *before* cordon/drain/the main Job, and a
+       non-empty termination log skips the node entirely (`internal/
+       controller/nodeop_controller.go`'s `advancePreflight` /
+       `manageJobCreation`) — the same "already done, skip" property mode 2
+       has, generalised from a version string to an arbitrary check. The
+       controller re-lists live cluster nodes on every reconcile
+       (`getTargetNodes`) and self-requeues every five minutes regardless of
+       phase (`RequeueAfter: time.Minute * 5`), and a node once recorded in
+       `status.nodeStatuses` is never re-started by `manageJobCreation`'s
+       fresh-node pass — so a persistent, cluster-wide `NodeOp` with a
+       preflight genuinely reaches a newly-joined node once, automatically,
+       without a git change, while never repeating work on a node already
+       done.
 
-    Mode 2 is `NodeOpUpgrade` only. A `NodeOp` runs an arbitrary command and has
-    no version comparison to skip nodes that need nothing, so "every node, one
-    at a time" is every node, without exception — that one names a host.
+    `matchExpressions` is rejected in all three: an `In` list over three nodes
+    reads like a selector and upgrades three nodes at once, and it is rejected
+    on the key's presence rather than on its truthiness so that the guard and
+    the ADR describe the same legal manifest.
 
-    `force: true` is refused in mode 2 for the same reason: it disables the
-    preflight version check, turning a round that would have skipped up-to-date
-    nodes into a reboot of every node in the cluster.
+    A bare `NodeOp` with no hostname and no `spec.preflight` is still
+    rejected: it has no per-node skip of any kind, so "every node" is every
+    node, unconditionally.
+
+    `force: true` is refused in modes 2 and 3 for the same reason: on
+    `NodeOpUpgrade` it disables the preflight version check; on either kind it
+    would turn a round that would have skipped up-to-date/already-done nodes
+    into an operation against every selected node.
     """
     spec = document.get("spec")
     if not isinstance(spec, dict):
@@ -196,13 +217,16 @@ def check_bounded(where, document):
             return [f"{where}: {HOSTNAME} must be a non-empty string"]
         return []
 
-    # No hostname: the cluster-wide, one-at-a-time shape.
+    # No hostname: the cluster-wide, one-at-a-time shapes (modes 2 and 3).
     violations = []
-    if document.get("kind") != "NodeOpUpgrade":
+    kind = document.get("kind")
+    has_preflight = isinstance(spec.get("preflight"), dict)
+    if kind != "NodeOpUpgrade" and not (kind == "NodeOp" and has_preflight):
         violations.append(
-            f"{where}: a {document.get('kind')} without {HOSTNAME} runs on every "
-            f"node; only NodeOpUpgrade may select a cluster, because only it "
-            f"skips nodes already at the target version")
+            f"{where}: a {kind} without {HOSTNAME} runs on every node; only "
+            f"NodeOpUpgrade (version-check skip) or a NodeOp with "
+            f"spec.preflight set (explicit per-node skip) may select a "
+            f"cluster — name a single {HOSTNAME} otherwise")
     if spec.get("concurrency") != 1:
         violations.append(
             f"{where}: selects more than one node, so it must set concurrency: 1 "
@@ -213,7 +237,7 @@ def check_bounded(where, document):
             f"stopOnFailure: true (got {spec.get('stopOnFailure')!r})")
     if spec.get("force") is True:
         violations.append(
-            f"{where}: force: true disables the preflight version check, so this "
-            f"would reboot every selected node; name a single "
+            f"{where}: force: true disables the preflight/version-check skip, "
+            f"so this would run against every selected node; name a single "
             f"{HOSTNAME} to use it")
     return violations
