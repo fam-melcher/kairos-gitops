@@ -20,3 +20,4 @@ resources:
   - apps/keycloak-operator
   - apps/cnpg-operator
   - apps/keycloak-config
+  - apps/node-config

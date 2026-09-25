@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: node-config
+  namespace: argocd
+spec:
+  description: One reviewed NodeOp at a time, targeting one node each. Nothing else.
+  sourceRepos:
+    - https://github.com/fam-melcher/kairos-gitops
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: kairos-system
+  # No Namespace here: kairos-system already exists, created and owned by
+  # kairos-upgrade's own namespace.yaml (ADR 0014). Two Applications both
+  # tracking the same Namespace object is the shared-resource conflict
+  # ADR 0004's ownership rule warns about — this project targets the
+  # namespace as a destination without owning the object.
+  namespaceResourceWhitelist:
+    - group: operator.kairos.io
+      kind: NodeOp
+  # No roles: nothing needs a project token.

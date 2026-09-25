@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-config
+  namespace: argocd
+spec:
+  source:
+    # HEAD, matching the root Application kairos-configs bootstraps — not a
+    # tag, and not "main". Same posture as kairos-upgrade's path-patch.yaml.
+    targetRevision: HEAD
+    path: clusters/k8s-prod/node-ops
