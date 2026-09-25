@@ -1,26 +1,26 @@
 apiVersion: k8s.keycloak.org/v2beta1
 kind: KeycloakRealmImport
 metadata:
-  name: kairos-realm
+  name: fam-melcher-realm
   namespace: keycloak
 spec:
   keycloakCRName: keycloak
   realm:
-    realm: kairos
+    realm: fam-melcher
     enabled: true
     # security-01 BLOCKER #2 fix (opencode/agents/reports/keycloak-02.md,
     # confirmed closed by opencode/agents/reports/security-02.md): closes
-    # self-registration as a path into cluster-admins/cluster-viewers.
+    # self-registration as a path into k8s-admins/k8s-users.
     registrationAllowed: false
     registrationEmailAsUsername: false
     groups:
-      - name: cluster-admins
-      - name: cluster-viewers
+      - name: k8s-admins
+      - name: k8s-users
     # Deliberately NO `defaultGroups` key at all. RealmRepresentation's
     # defaultGroups auto-enrolls every new user into the listed group paths;
     # omitting it entirely (rather than including it without the privileged
     # groups) is the safest form and needs no future maintainer to remember
-    # never to add "/cluster-admins" to it.
+    # never to add "/k8s-admins" to it.
     clients:
       - clientId: kubectl
         publicClient: true
@@ -33,6 +33,35 @@ spec:
           - "http://localhost:18000/callback"
     # TODO(verifier): opencode/human/OPEN-QUESTIONS.md #2 — confirm whether
     # the realm's default "Group Membership" protocol mapper emits bare
-    # group names or full paths ("/cluster-admins"); the ClusterRoleBinding
+    # group names or full paths ("/k8s-admins"); the ClusterRoleBinding
     # subjects in resources/clusterrolebindings.yaml assume bare names and
     # must be changed together with this if that assumption is wrong.
+    #
+    # NOTE: KeycloakRealmImport is documented upstream as one-shot — "only
+    # supports creation of new realms and does not update or delete those."
+    # This file's spec is the intended state for a from-scratch bootstrap,
+    # not a live-reconciled one.
+    #
+    # This round changes two things that pre-existed live under the OLD
+    # names (realm "kairos", groups "cluster-admins"/"cluster-viewers"):
+    #
+    # 1. Realm rename (kairos -> fam-melcher): the operator's "already
+    #    exists, skip" check is keyed on the realm name string. If this git
+    #    change reaches the cluster BEFORE the realm is renamed live, the
+    #    operator will treat "fam-melcher" as a brand-new, empty realm and
+    #    attempt to create it — leaving the real, populated "kairos" realm
+    #    (with its existing users, groups and your manually-created admin
+    #    account) orphaned and untouched, and a mostly-empty "fam-melcher"
+    #    realm sitting alongside it. Sequence required: rename the realm
+    #    live FIRST (Admin Console: Realm Settings -> the realm ID/name
+    #    field; or Admin REST API `PUT /admin/realms/kairos` with
+    #    `"realm": "fam-melcher"` in the body) — Keycloak supports renaming
+    #    a realm in place, preserving all its data — THEN merge/sync this
+    #    file, at which point the operator's own idempotent check finds
+    #    "fam-melcher" already exists and safely no-ops.
+    # 2. Group rename (cluster-admins/cluster-viewers -> k8s-admins/
+    #    k8s-users): lower risk, same principle — rename the two existing
+    #    groups by hand first (Admin Console: Groups -> rename; preserves
+    #    membership), then this file's spec matches. No orphan-realm risk
+    #    here since groups are being renamed within a realm you're renaming
+    #    anyway, not created fresh.
