@@ -1,0 +1,66 @@
+apiVersion: operator.kairos.io/v1alpha1
+kind: NodeOp
+metadata:
+  # Supersedes k3s-oidc-config. A spec-only edit would never re-run: every
+  # node is already recorded in status.nodeStatuses, which manageJobCreation's
+  # fresh-node pass skips. New content, new object name (ADR 0016).
+  name: k3s-oidc-config-v2
+  namespace: kairos-system
+spec:
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/control-plane: "true"
+  image: busybox:latest
+  # Content check, not existence: every node already carries the v1 file, so
+  # "does it exist" would skip the whole cluster. Greps the durable /oem
+  # source, not the /etc path materialized from it at boot.
+  preflight:
+    command:
+      - sh
+      - -c
+      - |
+        if grep -q 'oidc-username-prefix=-' /host/oem/90-k3s-oidc.yaml 2>/dev/null; then
+          echo "90-k3s-oidc.yaml already carries oidc-username-prefix" > /dev/termination-log
+        fi
+        exit 0
+  # Rewrites the same /oem file v1 owns rather than adding a second drop-in —
+  # k3s's merge order across config.yaml.d is not a thing to rely on for a
+  # list-valued key like kube-apiserver-arg. oidc-username-prefix=- is the
+  # only change to the flag set: without it the apiserver prepends "<issuer>#"
+  # to every username, because the claim is not "email". Group claims are
+  # unaffected either way.
+  command:
+    - sh
+    - -c
+    - |
+      set -e
+      cat > /host/oem/90-k3s-oidc.yaml << 'EOF'
+      #cloud-config
+      stages:
+        initramfs:
+          - name: "write k3s OIDC drop-in"
+            commands:
+              - mkdir -p /etc/rancher/k3s/config.yaml.d
+            files:
+              - path: /etc/rancher/k3s/config.yaml.d/90-oidc.yaml
+                permissions: 0600
+                owner: 0
+                group: 0
+                content: |
+                  kube-apiserver-arg:
+                    - oidc-issuer-url=https://keycloak.k8s-prod.home.fam-melcher.net/realms/fam-melcher
+                    - oidc-client-id=kubectl
+                    - oidc-username-claim=preferred_username
+                    - oidc-username-prefix=-
+                    - oidc-groups-claim=groups
+      EOF
+      sync
+  hostMountPath: /host
+  cordon: true
+  drainOptions:
+    enabled: true
+  # Writing the file alone does nothing until k3s restarts and re-reads
+  # config.yaml.d — the reboot is what applies the flags.
+  rebootOnSuccess: true
+  concurrency: 1
+  stopOnFailure: true

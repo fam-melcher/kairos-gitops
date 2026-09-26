@@ -2,7 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # A single, persistent, cluster-wide NodeOp (ADR 0016) — not one-per-node.
-# It stays here indefinitely; a config change means a new file/object name
-# (see the manifest's own header comment), not an edit to this one.
+# A config change means a new file/object name, and the superseded one is
+# removed in the same commit so exactly one object keeps reaching
+# newly-joined nodes.
 resources:
-  - k3s-oidc-config.yaml
+  - k3s-oidc-config-v2.yaml
